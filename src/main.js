@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
-import { createClientRecord, createWithdrawal, deleteClientRecord, getMyProfile, importBackup, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
+import { createClientRecord, createWithdrawal, deleteClientRecord, getMyProfile, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 let clients = [];
@@ -22,8 +22,17 @@ function showToast(message) {
   $('toast').classList.add('show');
   window.setTimeout(() => $('toast').classList.remove('show'), 3200);
 }
+function showWelcome(user) {
+  const sessionKey = `kontroll-welcome:${user.id}`;
+  if (sessionStorage.getItem(sessionKey)) return;
+  const hasVisited = localStorage.getItem(sessionKey) === '1';
+  const name = myProfile?.display_name || 'usuário';
+  showToast(`${hasVisited ? 'Bem-vindo de volta' : 'Bem-vindo'}, ${name}!`);
+  sessionStorage.setItem(sessionKey, '1');
+  localStorage.setItem(sessionKey, '1');
+}
 function setAuthView(view, message = '') {
-  $('authShell').hidden = false; $('appShell').hidden = true; $('userBadge').hidden = true;
+  $('authShell').hidden = false; $('appShell').hidden = true;
   $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true;
   $('profileMenuWrap').hidden = true;
   for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = id !== `${view}Form`;
@@ -33,31 +42,38 @@ function setAuthView(view, message = '') {
 }
 async function showApp(user) {
   if (!user) {
+    if (sessionUser) sessionStorage.removeItem(`kontroll-welcome:${sessionUser.id}`);
     sessionUser = null; document.querySelector('.header-nav').hidden = true; $('appShell').hidden = true; $('authShell').hidden = false;
-    $('userBadge').hidden = true; $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; $('profileMenuWrap').hidden = true; setAuthView('login'); return;
+    $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; $('profileMenuWrap').hidden = true; setAuthView('login'); return;
   }
   sessionUser = user; $('authShell').hidden = true; $('appShell').hidden = true;
-  $('userBadge').textContent = user.email || 'Conta conectada'; $('userBadge').hidden = false; $('logoutButton').hidden = false; role = 'pending';
+  $('logoutButton').hidden = false; role = 'pending';
   try {
     myProfile = await getMyProfile(user.id); role = myProfile?.role || 'pending';
   } catch (error) { showToast(`Não foi possível consultar o perfil: ${error.message}`); }
-  if (!['admin', 'operator', 'technician'].includes(role)) {
+  $('profileMenuWrap').hidden = false; $('profileNameBadge').textContent = myProfile?.display_name || 'Minha conta';
+  if (!['admin', 'operator', 'technician', 'attendant'].includes(role)) {
     $('appShell').hidden = true; $('authShell').hidden = false;
     for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = true;
     $('authHeading').textContent = 'Acesso pendente'; $('authSubtitle').textContent = 'Seu cadastro ainda não foi autorizado.';
     document.querySelector('.header-nav').hidden = true; $('authMessage').textContent = 'Peça a um administrador do kontroll. para liberar seu acesso.';
-    $('userBadge').textContent = user.email || 'Conta conectada'; $('userBadge').hidden = false; $('logoutButton').hidden = false; return;
+    return;
   }
-  document.querySelector('.header-nav').hidden = false; $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin'; $('profileMenuWrap').hidden = false;
+  document.querySelector('.header-nav').hidden = false; $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin';
   $('profileNameBadge').textContent = myProfile.display_name;
-  document.querySelectorAll('[data-view="monthly"],[data-view="clients"],[data-view="reports"]').forEach((button) => { button.hidden = role === 'technician'; });
-  $('withdrawalNav').hidden = false;
-  $('technicalNav').hidden = role === 'operator' || role === 'admin';
+  document.querySelectorAll('.header-nav .view-tab').forEach((button) => {
+    const view = button.dataset.view;
+    button.hidden = (view === 'monthly' && ['technician', 'attendant'].includes(role))
+      || (view === 'clients' && role === 'technician')
+      || (view === 'reports' && ['technician', 'attendant'].includes(role));
+  });
   $('clientTools').hidden = role === 'technician';
   $('authShell').hidden = true; $('appShell').hidden = false;
   if (role === 'technician') setView('withdrawals');
+  else if (role === 'attendant') setView('clients');
   else setView('monthly');
   await refreshClients();
+  showWelcome(user);
 }
 async function refreshClients() {
   if (!sessionUser) return;
@@ -112,10 +128,6 @@ function openDetails(id) {
 }
 function closeOverlay(id) { $(id).classList.remove('open'); }
 function isoToday() { return new Date().toISOString().slice(0, 10); }
-function fileDownload(fileName, payload) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url);
-}
 function clearErrors() { for (const id of ['loginError', 'signupError', 'recoveryError', 'newPasswordError', 'formError', 'resolveError']) $(id).textContent = ''; }
 
 function setTheme(theme) {
@@ -128,6 +140,8 @@ $('themeToggle').addEventListener('click', () => setTheme(document.body.dataset.
 setTheme(localStorage.getItem('fibra_theme') || 'light');
 
 function setView(view) {
+  if (role === 'technician' && view !== 'withdrawals') return;
+  if (role === 'attendant' && !['clients', 'withdrawals'].includes(view)) return;
   for (const key of ['monthly', 'clients', 'reports', 'withdrawals']) {
     $(`${key}View`).hidden = key !== view;
     document.querySelector(`[data-view="${key}"]`).classList.toggle('active', key === view);
@@ -247,12 +261,22 @@ function renderReports() {
 $('adminMenuToggle').addEventListener('click', () => {
   const menu = $('adminMenu'); menu.hidden = !menu.hidden; $('adminMenuToggle').setAttribute('aria-expanded', String(!menu.hidden));
 });
-$('profileMenuToggle').addEventListener('click', () => { $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileError').textContent = ''; });
+$('profileMenuToggle').addEventListener('click', () => { $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileEmail').value = sessionUser?.email || ''; $('profileError').textContent = ''; $('passwordChangeForm').reset(); $('passwordChangeError').textContent = ''; });
 $('profileForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('profileError').textContent = '';
   const displayName = $('profileName').value.trim(); if (!displayName) { $('profileError').textContent = 'O nome é obrigatório.'; return; }
   try { myProfile = await updateMyProfile(sessionUser.id, { display_name: displayName, phone: $('profilePhone').value }); $('profileNameBadge').textContent = myProfile.display_name; closeOverlay('profileOverlay'); showToast('Dados da conta atualizados.'); }
   catch (error) { $('profileError').textContent = `Não foi possível salvar: ${error.message}`; }
+});
+$('passwordChangeForm').addEventListener('submit', async (event) => {
+  event.preventDefault(); $('passwordChangeError').textContent = '';
+  const currentPassword = $('currentPassword').value;
+  const newPassword = $('accountNewPassword').value;
+  if (newPassword.length < 8) { $('passwordChangeError').textContent = 'A nova senha precisa ter pelo menos 8 caracteres.'; return; }
+  if (newPassword !== $('accountConfirmPassword').value) { $('passwordChangeError').textContent = 'As senhas novas não coincidem.'; return; }
+  const { error } = await supabase.auth.updateUser({ password: newPassword, current_password: currentPassword });
+  if (error) { $('passwordChangeError').textContent = error.message; return; }
+  $('passwordChangeForm').reset(); showToast('Senha alterada com sucesso.');
 });
 $('manageUsersBtn').addEventListener('click', async () => {
   $('adminMenu').hidden = true;
@@ -260,7 +284,7 @@ $('manageUsersBtn').addEventListener('click', async () => {
   catch (error) { showToast(`Não foi possível carregar usuários: ${error.message}`); }
 });
 function renderProfiles() {
-  $('usersList').innerHTML = profiles.map((profile) => `<div class="user-row"><div><div class="user-email">${escapeHtml(profile.display_name || 'Sem nome')}</div><div class="user-created">${escapeHtml(profile.email || 'Conta sem e-mail')}${profile.phone ? ` · ${escapeHtml(profile.phone)}` : ''}</div></div><select data-role="${escapeHtml(profile.id)}" aria-label="Permissão de ${escapeHtml(profile.email)}"><option value="pending" ${profile.role === 'pending' ? 'selected' : ''}>Pendente</option><option value="technician" ${profile.role === 'technician' ? 'selected' : ''}>Técnico</option><option value="operator" ${profile.role === 'operator' ? 'selected' : ''}>Operador</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>Administrador</option></select></div>`).join('') || '<div class="empty">Nenhum usuário encontrado.</div>';
+  $('usersList').innerHTML = profiles.map((profile) => `<div class="user-row"><div><div class="user-email">${escapeHtml(profile.display_name || 'Sem nome')}</div><div class="user-created">${escapeHtml(profile.email || 'Conta sem e-mail')}${profile.phone ? ` · ${escapeHtml(profile.phone)}` : ''}</div></div><select data-role="${escapeHtml(profile.id)}" aria-label="Permissão de ${escapeHtml(profile.email)}"><option value="pending" ${profile.role === 'pending' ? 'selected' : ''}>Pendente</option><option value="technician" ${profile.role === 'technician' ? 'selected' : ''}>Técnico</option><option value="attendant" ${profile.role === 'attendant' ? 'selected' : ''}>Atendente</option><option value="operator" ${profile.role === 'operator' ? 'selected' : ''}>Operador</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>Administrador</option></select></div>`).join('') || '<div class="empty">Nenhum usuário encontrado.</div>';
 }
 document.addEventListener('change', async (event) => {
   const roleSelect = event.target.closest('[data-role]');
@@ -308,7 +332,7 @@ if (!isSupabaseConfigured) {
     event.preventDefault(); clearErrors(); const { data, error } = await supabase.auth.updateUser({ password: $('newPassword').value });
     if (error) { $('newPasswordError').textContent = error.message; return; } await showApp(data.user); showToast('Senha atualizada.'); history.replaceState({}, '', window.location.pathname);
   });
-  $('logoutButton').addEventListener('click', async () => { const { error } = await supabase.auth.signOut(); if (error) showToast(`Não foi possível sair: ${error.message}`); });
+  $('logoutButton').addEventListener('click', async () => { closeOverlay('profileOverlay'); const { error } = await supabase.auth.signOut(); if (error) showToast(`Não foi possível sair: ${error.message}`); });
   supabase.auth.onAuthStateChange((event, session) => { window.setTimeout(() => { if (event === 'PASSWORD_RECOVERY') setAuthView('newPassword'); else void showApp(session?.user || null); }, 0); });
   supabase.auth.getSession().then(({ data, error }) => { if (error) { setAuthView('login', error.message); return; } if (new URLSearchParams(window.location.search).has('reset')) setAuthView('newPassword'); else void showApp(data.session?.user || null); });
 }
@@ -362,15 +386,6 @@ $('deleteBtn').addEventListener('click', async () => {
   const client = clients.find((item) => item.id === selectedId); if (!client || role !== 'admin') return;
   if (!window.confirm(`Excluir o cadastro de ${client.name}? Esta ação não pode ser desfeita.`)) return;
   try { await deleteClientRecord(client.id); closeOverlay('detailOverlay'); await refreshClients(); showToast('Cadastro excluído.'); } catch (error) { showToast(`Não foi possível excluir: ${error.message}`); }
-});
-$('exportCloudBtn').addEventListener('click', async () => {
-  try { const rows = await listClients(); fileDownload(`backup-clientes-fibracenter-${isoToday()}.json`, { exportedAt: new Date().toISOString(), records: rows }); showToast('Backup baixado.'); }
-  catch (error) { showToast(`Não foi possível exportar: ${error.message}`); }
-});
-$('importFile').addEventListener('change', async (event) => {
-  const file = event.target.files?.[0]; if (!file) return;
-  try { const payload = JSON.parse(await file.text()); const records = Array.isArray(payload) ? payload : payload.records; if (!Array.isArray(records)) throw new Error('O JSON não contém a lista records.'); const count = await importBackup(records, sessionUser.id); await refreshClients(); showToast(`${count} registro(s) importado(s) ou atualizados.`); }
-  catch (error) { showToast(`Falha na importação: ${error.message}`); } finally { event.target.value = ''; }
 });
 $('csvImportFile').addEventListener('change', async (event) => {
   const file = event.target.files?.[0]; if (!file) return;

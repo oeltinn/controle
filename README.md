@@ -9,8 +9,9 @@ Esta pasta adiciona a infraestrutura online sem trocar a interface principal: Vi
 ## Papéis e acesso
 
 - `pending`: toda conta criada pelo formulário público começa sem acesso aos dados.
-- `technician`: acessa a fila de retirada de ONU e registra visitas; não acessa a lista de inadimplentes.
-- `operator`: acessa a lista de inadimplentes e as filas de retirada.
+- `technician`: acessa somente a fila de retirada de ONU e registra visitas.
+- `attendant`: acessa Clientes e a fila de retirada de ONU.
+- `operator`: acessa a visão geral, clientes, relatórios e as filas de retirada.
 - `admin`: tem as permissões de operador, pode excluir cadastros e autorizar usuários pelo menu de três linhas no topo.
 
 O banco repete essas regras com RLS, portanto esconder botões na interface não é a barreira de segurança. Um administrador libera operadores pelo menu **Autorizar usuários**. A primeira conta admin deve ser promovida uma vez pelo SQL Editor. Isso evita que qualquer pessoa que encontre o endereço público se cadastre e passe a ler os dados dos clientes.
@@ -24,7 +25,7 @@ O banco repete essas regras com RLS, portanto esconder botões na interface não
 ## 1. Criar o projeto no Supabase
 
 1. Crie um projeto no Supabase e escolha uma senha forte para o banco. A senha do banco não é usada pela aplicação.
-2. No painel do projeto, abra **SQL Editor** e execute, em ordem, `supabase/migrations/202611050001_shared_clients.sql`, `supabase/migrations/202611050002_csv_monthly_reporting.sql` e `supabase/migrations/202611050003_technician_withdrawals.sql`.
+2. No painel do projeto, abra **SQL Editor** e execute, em ordem, `supabase/migrations/202611050001_shared_clients.sql`, `supabase/migrations/202611050002_csv_monthly_reporting.sql`, `supabase/migrations/202611050003_technician_withdrawals.sql` e `supabase/migrations/202611050004_attendant_role.sql`.
 3. Em **Project Settings → API Keys**, copie a Project URL e a chave **Publishable** (`sb_publishable_...`). A antiga chave `anon` também é uma chave pública de cliente, mas prefira a Publishable nos projetos novos.
 4. Em **Authentication → Providers → Email**, mantenha habilitado o provedor de e-mail. Em produção, configure o envio/SMTP de e-mails para confirmações e recuperação de senha.
 5. Em **Authentication → URL Configuration**, configure:
@@ -66,29 +67,17 @@ set role = 'admin'
 where lower(email) = lower('seu-email@empresa.com');
 ```
 
-O administrador pode autorizar técnicos pelo menu de três linhas. Se precisar promover pelo SQL Editor, execute:
+O administrador pode autorizar técnicos e atendentes pelo menu de três linhas. Se precisar promover pelo SQL Editor, execute:
 
 ```sql
 update public.profiles
-set role = 'technician'
+set role = 'attendant'
 where lower(email) = lower('colega@empresa.com');
 ```
 
-Novas inscrições pedem nome completo e continuam pendentes até a autorização. Técnicos só acessam retirada de ONU; operadores e administradores acessam as listas de inadimplência e retirada. Só `admin` pode excluir registros da lista de inadimplência; as regras também são aplicadas no banco por RLS.
+Novas inscrições pedem nome completo e continuam pendentes até a autorização. Técnicos só acessam retirada de ONU; atendentes acessam Clientes e Retirada de ONU; operadores e administradores acessam todas as páginas. Só `admin` pode excluir registros da lista de inadimplência; as regras também são aplicadas no banco por RLS.
 
-## 4. Levar a lista que está no navegador para o banco
-
-A lista antiga está no `localStorage` do navegador e não é automaticamente visível para um endereço de hospedagem diferente. Para transferi-la:
-
-1. Abra `../controle-clientes-serasa.html` no mesmo navegador e aparelho em que os cadastros foram feitos.
-2. Use **Exportar backup** para baixar `backup-local-fibracenter.json`.
-3. Abra a versão online, entre com uma conta autorizada e use **Importar dados locais** para selecionar esse JSON.
-4. Aguarde a mensagem de importação e confira os registros. A importação pode ser repetida: ela usa o identificador antigo para atualizar duplicatas em vez de criar cópias.
-5. Use **Exportar backup** na versão online para guardar uma cópia dos dados hospedados.
-
-O arquivo de backup contém dados pessoais e de cobrança. Guarde-o apenas em local autorizado e exclua cópias temporárias após a migração.
-
-## 5. Publicar na Vercel
+## 4. Publicar na Vercel
 
 1. Envie o conteúdo desta pasta (`controle-fibracenter-online`) para um repositório Git. Se a pasta estiver dentro de um monorepositório, configure **Root Directory** da Vercel para `outputs/controle-fibracenter-online`.
 2. Na Vercel, importe o repositório. Use o preset Vite, comando de build `npm run build` e pasta de saída `dist`.
@@ -96,6 +85,8 @@ O arquivo de backup contém dados pessoais e de cobrança. Guarde-o apenas em lo
 4. Faça o deploy. A configuração `vercel.json` encaminha caminhos da aplicação ao `index.html`.
 5. Copie o endereço gerado pela Vercel para **Authentication → URL Configuration → Site URL** e **Redirect URLs** no Supabase. Inclua também o domínio próprio, se houver. Depois faça um novo deploy caso altere variáveis de ambiente.
 6. Cadastre e confirme as contas, promova um administrador e autorize os operadores.
+
+O menu do perfil mostra o e-mail, permite editar nome e telefone, trocar a senha com confirmação da senha atual e sair da conta. A primeira entrada mostra “Bem-vindo”; as próximas entradas mostram “Bem-vindo de volta”.
 
 ## Variáveis de ambiente
 
@@ -108,7 +99,7 @@ Não existe chave `service_role` no frontend. As credenciais de login são proce
 
 ## Banco e segurança
 
-A migração cria `profiles` e `clients`, índices, triggers de perfil e atualização, e políticas RLS. Contas autenticadas pendentes não podem consultar nem modificar `clients`. Operadores e administradores acessam a mesma lista. A função SQL `can_access_clients()` é usada pelas políticas de leitura/escrita; `is_admin()` limita exclusões e administração de papéis. As políticas são verificadas no banco, no servidor do Supabase.
+A migração cria `profiles` e `clients`, índices, triggers de perfil e atualização, e políticas RLS. Contas autenticadas pendentes não podem consultar nem modificar `clients`. Atendentes, operadores e administradores acessam a lista compartilhada. A função SQL `can_access_clients()` é usada pelas políticas de leitura/escrita; `is_admin()` limita exclusões e administração de papéis. As políticas são verificadas no banco, no servidor do Supabase.
 
 Para publicar mudanças posteriores no esquema, adicione uma nova migração em `supabase/migrations/` em vez de editar uma migração já aplicada.
 
@@ -140,18 +131,18 @@ Situações suportadas: `REGULARIZADO`, `SIM`, `NÃO` e `EM CONTATO`. A situaç�
 
 - A **Visão mensal** abre por padrão e mostra, para cada mês, quem foi negativado e quem foi regularizado, com contagens e datas. Selecionar o nome abre o cadastro.
 - Em **Clientes**, altere a situação para `SIM`, `NÃO`, `EM CONTATO` ou `REGULARIZADO`. A regularização continua exigindo a descrição do que foi feito.
-- Em **Relatórios**, a pizza de negativações agrupa ocorrências pelo mês da data de negativação; a pizza de situação total conta clientes atuais por situação; o gráfico de colunas compara regularizações registradas por mês com clientes atualmente `SIM` agrupados pelo mês da negativação.
+- Em **Relatórios**, a pizza de negativações agrupa ocorrências pelo mês da data de negativação; a pizza de situação total conta clientes atuais por situação; o gráfico de colunas compara regularizações registradas por mês com clientes atualmente `SIM` agrupados pelo mês da negativação. Essa página fica disponível apenas para operadores e administradores.
 - Administradores abrem o menu de três linhas no topo para autorizar, rebaixar ou tornar administradores de usuários cadastrados.
 - O tema claro/escuro é alternado pelo ícone no topo.
 
 ## Migração do banco
 
-Depois de aplicar a migração anterior, aplique também `supabase/migrations/202611050002_csv_monthly_reporting.sql` no SQL Editor do Supabase. Ela adiciona os campos de situação da planilha, datas de evento, ID da ocorrência e os dados originais em JSON. Não edite uma migração que já tenha sido executada.
+As migrações `202611050002_csv_monthly_reporting.sql` e `202611050003_technician_withdrawals.sql` adicionam os campos da planilha e a fila de retirada. A nova `202611050004_attendant_role.sql` libera o papel de atendente para clientes e retirada e atualiza as funções de permissão RLS. Não edite uma migração que já tenha sido executada.
 
 # Retirada de ONU e contas de técnicos
 
-Cadastros criados em `supabase/migrations/202611050003_technician_withdrawals.sql` adicionam nome obrigatório e telefone opcional ao perfil, função `technician`, fila compartilhada de retirada de ONU e histórico de visitas. Aplique a migração pelo SQL Editor do Supabase antes de publicar a interface atualizada.
+Cadastros criados em `supabase/migrations/202611050003_technician_withdrawals.sql` adicionam nome obrigatório e telefone opcional ao perfil, função `technician`, fila compartilhada de retirada de ONU e histórico de visitas. A migração seguinte adiciona `attendant` com acesso apenas a Clientes e Retirada de ONU.
 
-No menu de usuários, um administrador pode autorizar cada conta como **Técnico**, **Operador**, **Administrador** ou manter **Pendente**. A conta deve ser cadastrada com nome completo; cada pessoa edita também o telefone opcional em **Minha conta**. Técnicos veem a lista de retirada, abrem o cliente e marcam **Ainda não fui**, **Já fui** ou **Não encontrei ninguém**. Visitas sem contato ficam registradas com o nome do técnico e aparecem na visão mensal para os demais usuários autorizados.
+No menu de usuários, um administrador pode autorizar cada conta como **Técnico**, **Atendente**, **Operador**, **Administrador** ou manter **Pendente**. A conta deve ser cadastrada com nome completo; cada pessoa edita também o telefone opcional em **Minha conta**. Técnicos e atendentes veem a lista de retirada, abrem o cliente e marcam **Ainda não fui**, **Já fui** ou **Não encontrei ninguém**. Visitas sem contato ficam registradas com o nome da pessoa e aparecem na visão geral para os demais usuários autorizados.
 
 Na página **Retirada de ONU**, o cadastro exige nome, endereço e equipamento; telefone é opcional. O CSV aceita cabeçalhos como `Nome`, `Telefone`, `Endereço`, `Equipamento` (também reconhece `Rua`, `Bairro`, `Cidade`, `Modelo` e `ONU`). Endereços em colunas de rua/bairro/cidade são reunidos. O importador detecta separador por vírgula, ponto e vírgula ou tabulação e ignora linhas sem nome, endereço ou equipamento.
