@@ -10,11 +10,21 @@ export async function listClients() {
 }
 
 export async function listProfiles() {
-  return unwrap(await supabase.from('profiles').select('id,email,role,created_at').order('email'));
+  return unwrap(await supabase.from('profiles').select('id,email,role,display_name,phone,created_at').order('display_name'));
+}
+
+export async function getMyProfile(userId) {
+  return unwrap(await supabase.from('profiles').select('id,email,role,display_name,phone').eq('id', userId).single());
+}
+
+export async function updateMyProfile(userId, values) {
+  return unwrap(await supabase.from('profiles').update({ display_name: values.display_name.trim(), phone: values.phone.trim() || null }).eq('id', userId).select('id,email,role,display_name,phone').single());
 }
 
 export async function updateProfileRole(id, role) {
-  return unwrap(await supabase.from('profiles').update({ role }).eq('id', id).select().single());
+  const profile = unwrap(await supabase.rpc('admin_update_profile_role', { p_user_id: id, p_role: role }));
+  if (!profile) throw new Error('A permissão não foi alterada. Confirme que sua conta é administradora.');
+  return profile;
 }
 
 export async function createClientRecord(values, userId) {
@@ -54,6 +64,8 @@ function headerKey(value) {
 
 export function parseCsv(text) {
   const input = String(text).replace(/^\uFEFF/, '');
+  const firstLine = input.split(/\r?\n/, 1)[0] || '';
+  const delimiter = [',', ';', '\t'].map((candidate) => ({ candidate, count: firstLine.split(candidate).length - 1 })).sort((a, b) => b.count - a.count)[0].candidate;
   const rows = [];
   let row = [], field = '', quoted = false;
   for (let i = 0; i < input.length; i += 1) {
@@ -63,7 +75,7 @@ export function parseCsv(text) {
       else if (char === '"') quoted = false;
       else field += char;
     } else if (char === '"') quoted = true;
-    else if (char === ',') { row.push(field); field = ''; }
+    else if (char === delimiter) { row.push(field); field = ''; }
     else if (char === '\n' || char === '\r') {
       if (char === '\r' && input[i + 1] === '\n') i += 1;
       row.push(field); field = '';
@@ -126,6 +138,60 @@ export async function importCsv(records, userId) {
   return { imported: rows.length, skipped };
 }
 
+export function normalizeWithdrawalCsv(records, userId) {
+  let skipped = 0;
+  const rows = [];
+  const pick = (row, names) => {
+    for (const name of names) { const value = byHeader(row, name); if (value) return value; }
+    return '';
+  };
+  for (const item of records) {
+    const name = pick(item, ['NOME', 'NOME DO CLIENTE', 'CLIENTE']);
+    const address = pick(item, ['ENDEREÇO', 'ENDERECO', 'ENDEREÇO COMPLETO', 'ENDERECO COMPLETO']) ||
+      [pick(item, ['RUA', 'LOGRADOURO']), pick(item, ['BAIRRO']), pick(item, ['CIDADE'])].filter(Boolean).join(', ');
+    const equipment = pick(item, ['EQUIPAMENTO', 'MODELO', 'MODELO DO EQUIPAMENTO', 'ONU']);
+    if (![name, address, equipment].every((value) => value.trim())) { skipped += 1; continue; }
+    const stableKey = `${headerKey(name)}|${headerKey(address)}|${headerKey(equipment)}`;
+    const fingerprint = [...stableKey].reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619), 2166136261).toString(16);
+    rows.push({
+      legacy_id: `csv-retirada-${fingerprint}`,
+      name: name.trim(), phone: pick(item, ['TELEFONE', 'CELULAR', 'CONTATO']).trim() || null,
+      address: address.trim(), equipment: equipment.trim(), created_by: userId,
+    });
+  }
+  return { rows, skipped };
+}
+
+export async function listWithdrawals() {
+  return unwrap(await supabase.from('onu_withdrawals').select('*').order('name'));
+}
+
+export async function createWithdrawal(values, userId) {
+  const row = { legacy_id: values.legacy_id || `retirada-${crypto.randomUUID()}`, name: values.name.trim(), phone: values.phone?.trim() || null, address: values.address.trim(), equipment: values.equipment.trim(), created_by: userId };
+  return unwrap(await supabase.from('onu_withdrawals').upsert(row, { onConflict: 'legacy_id' }).select().single());
+}
+
+export async function importWithdrawalsCsv(records, userId) {
+  const { rows, skipped } = normalizeWithdrawalCsv(records, userId);
+  if (!rows.length) throw new Error('Nenhuma linha completa encontrada. Informe nome, endereço e equipamento no CSV.');
+  for (let start = 0; start < rows.length; start += 100) unwrap(await supabase.from('onu_withdrawals').upsert(rows.slice(start, start + 100), { onConflict: 'legacy_id' }));
+  return { imported: rows.length, skipped };
+}
+
+export async function listWithdrawalVisits() {
+  return unwrap(await supabase.from('onu_withdrawal_visits').select('*').order('created_at', { ascending: false }).limit(1000));
+}
+
+export async function recordWithdrawalVisit(withdrawalId, result, observation) {
+  const visit = unwrap(await supabase.rpc('record_onu_withdrawal_visit', { p_withdrawal_id: withdrawalId, p_result: result, p_observation: observation.trim() }));
+  if (!visit) throw new Error('Sua conta não tem autorização para registrar essa visita.');
+  return visit;
+}
+
+export async function updateWithdrawal(id, changes) {
+  return unwrap(await supabase.from('onu_withdrawals').update(changes).eq('id', id).select().single());
+}
+
 function backupStatus(item) {
   const raw = headerKey(item.negativado_status || item.status);
   return ({ NEGATIVADO: 'SIM', REGULARIZADO: 'REGULARIZADO', NAO: 'NÃO', SIM: 'SIM', 'EM CONTATO': 'EM CONTATO' })[raw] || 'SIM';
@@ -154,3 +220,6 @@ export async function importBackup(records, userId) {
   for (let start = 0; start < rows.length; start += 100) unwrap(await supabase.from('clients').upsert(rows.slice(start, start + 100), { onConflict: 'legacy_id' }));
   return rows.length;
 }
+
+
+

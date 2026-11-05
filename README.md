@@ -9,7 +9,8 @@ Esta pasta adiciona a infraestrutura online sem trocar a interface principal: Vi
 ## Papéis e acesso
 
 - `pending`: toda conta criada pelo formulário público começa sem acesso aos dados.
-- `operator`: pode ler, cadastrar e atualizar a lista compartilhada.
+- `technician`: acessa a fila de retirada de ONU e registra visitas; não acessa a lista de inadimplentes.
+- `operator`: acessa a lista de inadimplentes e as filas de retirada.
 - `admin`: tem as permissões de operador, pode excluir cadastros e autorizar usuários pelo menu de três linhas no topo.
 
 O banco repete essas regras com RLS, portanto esconder botões na interface não é a barreira de segurança. Um administrador libera operadores pelo menu **Autorizar usuários**. A primeira conta admin deve ser promovida uma vez pelo SQL Editor. Isso evita que qualquer pessoa que encontre o endereço público se cadastre e passe a ler os dados dos clientes.
@@ -23,7 +24,7 @@ O banco repete essas regras com RLS, portanto esconder botões na interface não
 ## 1. Criar o projeto no Supabase
 
 1. Crie um projeto no Supabase e escolha uma senha forte para o banco. A senha do banco não é usada pela aplicação.
-2. No painel do projeto, abra **SQL Editor** e execute primeiro `supabase/migrations/202611050001_shared_clients.sql` e depois `supabase/migrations/202611050002_csv_monthly_reporting.sql`.
+2. No painel do projeto, abra **SQL Editor** e execute, em ordem, `supabase/migrations/202611050001_shared_clients.sql`, `supabase/migrations/202611050002_csv_monthly_reporting.sql` e `supabase/migrations/202611050003_technician_withdrawals.sql`.
 3. Em **Project Settings → API Keys**, copie a Project URL e a chave **Publishable** (`sb_publishable_...`). A antiga chave `anon` também é uma chave pública de cliente, mas prefira a Publishable nos projetos novos.
 4. Em **Authentication → Providers → Email**, mantenha habilitado o provedor de e-mail. Em produção, configure o envio/SMTP de e-mails para confirmações e recuperação de senha.
 5. Em **Authentication → URL Configuration**, configure:
@@ -65,15 +66,15 @@ set role = 'admin'
 where lower(email) = lower('seu-email@empresa.com');
 ```
 
-O administrador pode autorizar outros usuários como operadores pelo mesmo painel:
+O administrador pode autorizar técnicos pelo menu de três linhas. Se precisar promover pelo SQL Editor, execute:
 
 ```sql
 update public.profiles
-set role = 'operator'
+set role = 'technician'
 where lower(email) = lower('colega@empresa.com');
 ```
 
-Novas inscrições continuam pendentes até essa autorização. Só `admin` pode excluir registros; a regra também está nas políticas RLS.
+Novas inscrições pedem nome completo e continuam pendentes até a autorização. Técnicos só acessam retirada de ONU; operadores e administradores acessam as listas de inadimplência e retirada. Só `admin` pode excluir registros da lista de inadimplência; as regras também são aplicadas no banco por RLS.
 
 ## 4. Levar a lista que está no navegador para o banco
 
@@ -146,3 +147,11 @@ Situações suportadas: `REGULARIZADO`, `SIM`, `NÃO` e `EM CONTATO`. A situaç�
 ## Migração do banco
 
 Depois de aplicar a migração anterior, aplique também `supabase/migrations/202611050002_csv_monthly_reporting.sql` no SQL Editor do Supabase. Ela adiciona os campos de situação da planilha, datas de evento, ID da ocorrência e os dados originais em JSON. Não edite uma migração que já tenha sido executada.
+
+# Retirada de ONU e contas de técnicos
+
+Cadastros criados em `supabase/migrations/202611050003_technician_withdrawals.sql` adicionam nome obrigatório e telefone opcional ao perfil, função `technician`, fila compartilhada de retirada de ONU e histórico de visitas. Aplique a migração pelo SQL Editor do Supabase antes de publicar a interface atualizada.
+
+No menu de usuários, um administrador pode autorizar cada conta como **Técnico**, **Operador**, **Administrador** ou manter **Pendente**. A conta deve ser cadastrada com nome completo; cada pessoa edita também o telefone opcional em **Minha conta**. Técnicos veem a lista de retirada, abrem o cliente e marcam **Ainda não fui**, **Já fui** ou **Não encontrei ninguém**. Visitas sem contato ficam registradas com o nome do técnico e aparecem na visão mensal para os demais usuários autorizados.
+
+Na página **Retirada de ONU**, o cadastro exige nome, endereço e equipamento; telefone é opcional. O CSV aceita cabeçalhos como `Nome`, `Telefone`, `Endereço`, `Equipamento` (também reconhece `Rua`, `Bairro`, `Cidade`, `Modelo` e `ONU`). Endereços em colunas de rua/bairro/cidade são reunidos. O importador detecta separador por vírgula, ponto e vírgula ou tabulação e ignora linhas sem nome, endereço ou equipamento.

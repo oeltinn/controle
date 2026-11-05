@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
-import { createClientRecord, deleteClientRecord, importBackup, importCsv, listClients, listProfiles, parseCsv, updateClientRecord, updateProfileRole } from './data.js';
+import { createClientRecord, createWithdrawal, deleteClientRecord, getMyProfile, importBackup, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 let clients = [];
@@ -8,6 +8,11 @@ let role = 'pending';
 let selectedId = null;
 let pendingId = null;
 let profiles = [];
+let withdrawals = [];
+let withdrawalVisits = [];
+let myProfile = null;
+let selectedWithdrawalId = null;
+let withdrawalVisitResult = 'pending';
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -20,6 +25,7 @@ function showToast(message) {
 function setAuthView(view, message = '') {
   $('authShell').hidden = false; $('appShell').hidden = true; $('userBadge').hidden = true;
   $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true;
+  $('profileMenuWrap').hidden = true;
   for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = id !== `${view}Form`;
   const titles = { login: ['Entrar', 'Acesse o controle compartilhado de clientes.'], signup: ['Criar usuário', 'Novos usuários recebem acesso pendente.'], recovery: ['Recuperar senha', 'Enviaremos um link para o e-mail cadastrado.'], newPassword: ['Criar nova senha', 'Escolha uma nova senha para sua conta.'] };
   const [heading, subtitle] = titles[view] || titles.login;
@@ -28,28 +34,40 @@ function setAuthView(view, message = '') {
 async function showApp(user) {
   if (!user) {
     sessionUser = null; $('appShell').hidden = true; $('authShell').hidden = false;
-    $('userBadge').hidden = true; $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; setAuthView('login'); return;
+    $('userBadge').hidden = true; $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; $('profileMenuWrap').hidden = true; setAuthView('login'); return;
   }
   sessionUser = user; $('authShell').hidden = true; $('appShell').hidden = true;
   $('userBadge').textContent = user.email || 'Conta conectada'; $('userBadge').hidden = false; $('logoutButton').hidden = false; role = 'pending';
   try {
-    const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-    if (error) throw error; role = data?.role || 'pending';
+    myProfile = await getMyProfile(user.id); role = myProfile?.role || 'pending';
   } catch (error) { showToast(`Não foi possível consultar o perfil: ${error.message}`); }
-  if (!['admin', 'operator'].includes(role)) {
+  if (!['admin', 'operator', 'technician'].includes(role)) {
     $('appShell').hidden = true; $('authShell').hidden = false;
     for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = true;
     $('authHeading').textContent = 'Acesso pendente'; $('authSubtitle').textContent = 'Seu cadastro ainda não foi autorizado.';
     $('authMessage').textContent = 'Peça a um administrador do Controle FibraCenter para liberar seu acesso.';
     $('userBadge').textContent = user.email || 'Conta conectada'; $('userBadge').hidden = false; $('logoutButton').hidden = false; return;
   }
-  $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin';
-  $('authShell').hidden = true; $('appShell').hidden = false; await refreshClients();
+  $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin'; $('profileMenuWrap').hidden = false;
+  $('profileNameBadge').textContent = myProfile.display_name;
+  document.querySelectorAll('[data-view="monthly"],[data-view="clients"],[data-view="reports"]').forEach((button) => { button.hidden = role === 'technician'; });
+  $('withdrawalNav').hidden = false;
+  $('technicalNav').hidden = role === 'operator' || role === 'admin';
+  $('clientTools').hidden = role === 'technician';
+  $('authShell').hidden = true; $('appShell').hidden = false;
+  if (role === 'technician') setView('withdrawals');
+  else setView('monthly');
+  await refreshClients();
 }
 async function refreshClients() {
   if (!sessionUser) return;
-  try { clients = await listClients(); renderClients(); renderMonthly(); renderReports(); }
-  catch (error) { showToast(`Não foi possível carregar os clientes: ${error.message}`); }
+  if (role === 'technician') {
+    try { clients = []; [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
+    catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
+    return;
+  }
+  try { clients = await listClients(); renderClients(); renderMonthly(); renderReports(); [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderNoAnswerVisits(); }
+  catch (error) { showToast(`Não foi possível carregar os dados: ${error.message}`); }
 }
 function currentStatus(client) {
   return client.negativado_status || (client.status === 'REGULARIZADO' ? 'REGULARIZADO' : 'SIM');
@@ -58,6 +76,7 @@ function renderClients() {
   const active = clients.filter((client) => currentStatus(client) !== 'REGULARIZADO').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const regularized = clients.filter((client) => currentStatus(client) === 'REGULARIZADO').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   $('countNeg').textContent = active.length; $('countReg').textContent = regularized.length;
+  $('summaryClients').textContent = clients.length;
   drawList('listNeg', active, $('searchNeg').value); drawList('listReg', regularized, $('searchReg').value);
 }
 function drawList(elementId, records, query) {
@@ -109,14 +128,70 @@ $('themeToggle').addEventListener('click', () => setTheme(document.body.dataset.
 setTheme(localStorage.getItem('fibra_theme') || 'light');
 
 function setView(view) {
-  for (const key of ['monthly', 'clients', 'reports']) {
+  for (const key of ['monthly', 'clients', 'reports', 'withdrawals']) {
     $(`${key}View`).hidden = key !== view;
     document.querySelector(`[data-view="${key}"]`).classList.toggle('active', key === view);
   }
-  const heading = { monthly: ['Visão mensal', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'] }[view];
+  const heading = { monthly: ['Visão mensal', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'], withdrawals: ['Retirada de ONU', 'Organize os contatos e as visitas dos técnicos.'] }[view];
   $('pageTitle').textContent = heading[0]; $('pageSubtitle').textContent = heading[1];
+  $('clientTools').hidden = view === 'withdrawals' || role === 'technician';
+  $('withdrawalTools').hidden = view !== 'withdrawals';
+  $('notice').hidden = view === 'withdrawals';
+  if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
 }
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
+
+function latestVisit(withdrawalId) { return withdrawalVisits.find((visit) => visit.withdrawal_id === withdrawalId) || null; }
+function renderWithdrawals() {
+  const term = $('withdrawalSearch').value.trim().toLocaleLowerCase('pt-BR');
+  const filtered = withdrawals.filter((item) => `${item.name} ${item.address} ${item.equipment}`.toLocaleLowerCase('pt-BR').includes(term));
+  $('withdrawalCount').textContent = withdrawals.length;
+  $('summaryWithdrawals').textContent = withdrawals.length;
+  $('withdrawalVisitsCount').textContent = withdrawalVisits.length;
+  $('withdrawalList').innerHTML = filtered.length ? filtered.map((item) => {
+    const visit = latestVisit(item.id);
+    const label = visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi';
+    const tag = visit?.result === 'no_answer' ? 'missed' : visit?.result === 'visited' ? 'visited' : 'pending';
+    return `<button class="withdrawal-card" data-withdrawal="${escapeHtml(item.id)}"><span class="withdrawal-name">${escapeHtml(item.name)}</span><span class="withdrawal-address">${escapeHtml(item.address)}</span><span class="withdrawal-meta">${escapeHtml(item.equipment)}<i class="visit-tag ${tag}">${label}</i></span></button>`;
+  }).join('') : `<div class="empty">${term ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes na lista de retirada.'}</div>`;
+}
+function renderNoAnswerVisits() {
+  const missed = withdrawalVisits.filter((visit) => visit.result === 'no_answer');
+  $('noAnswerCount').textContent = missed.length;
+  $('summaryNoAnswers').textContent = missed.length;
+  $('noAnswerList').innerHTML = missed.length ? missed.map((visit) => {
+    const client = withdrawals.find((item) => item.id === visit.withdrawal_id);
+    return `<article class="incident-card"><div class="incident-title">${escapeHtml(client?.name || 'Cliente')} <span>${escapeHtml(displayDate(String(visit.created_at).slice(0,10)))}</span></div><div class="incident-copy"><strong>${escapeHtml(visit.technician_name)}</strong> foi até o endereço, mas não encontrou ninguém.</div><div class="incident-note">${escapeHtml(visit.observation)}</div></article>`;
+  }).join('') : '<div class="empty">Nenhum registro de visita sem contato.</div>';
+}
+async function refreshWithdrawals() {
+  if (!sessionUser || !['admin','operator','technician'].includes(role)) return;
+  try { [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
+  catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
+}
+function openWithdrawalDetails(id) {
+  const item = withdrawals.find((entry) => entry.id === id); if (!item) return;
+  selectedWithdrawalId = id;
+  const visit = latestVisit(id);
+  $('withdrawalDetailName').textContent = item.name;
+  $('withdrawalDetailFields').innerHTML = [
+    ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
+    ['Situação', visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi'],
+    ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
+  ].map(([label, value]) => `<div class="field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
+  $('withdrawalDetailOverlay').classList.add('open');
+}
+function openVisitForm(result) {
+  withdrawalVisitResult = result;
+  const labels = { pending: 'Marcar como ainda não foi', visited: 'Registrar visita realizada', no_answer: 'Registrar que não encontrou ninguém' };
+  $('visitTitle').textContent = labels[result];
+  $('visitObservation').value = '';
+  $('visitObservation').required = result !== 'pending';
+  $('visitObservationLabel').textContent = result === 'pending' ? 'Observação (opcional)' : 'O que aconteceu? *';
+  $('visitObservation').placeholder = result === 'no_answer' ? 'Ex.: Ninguém atendeu; vizinho informou horário...' : 'Descreva brevemente o resultado da visita...';
+  $('visitError').textContent = '';
+  $('visitOverlay').classList.add('open');
+}
 
 function monthKey(value) { return value ? String(value).slice(0, 7) : ''; }
 function monthLabel(key) { if (!key) return 'Sem data'; const [year, month] = key.split('-'); return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); }
@@ -173,13 +248,20 @@ function renderReports() {
 $('adminMenuToggle').addEventListener('click', () => {
   const menu = $('adminMenu'); menu.hidden = !menu.hidden; $('adminMenuToggle').setAttribute('aria-expanded', String(!menu.hidden));
 });
+$('profileMenuToggle').addEventListener('click', () => { $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileError').textContent = ''; });
+$('profileForm').addEventListener('submit', async (event) => {
+  event.preventDefault(); $('profileError').textContent = '';
+  const displayName = $('profileName').value.trim(); if (!displayName) { $('profileError').textContent = 'O nome é obrigatório.'; return; }
+  try { myProfile = await updateMyProfile(sessionUser.id, { display_name: displayName, phone: $('profilePhone').value }); $('profileNameBadge').textContent = myProfile.display_name; closeOverlay('profileOverlay'); showToast('Dados da conta atualizados.'); }
+  catch (error) { $('profileError').textContent = `Não foi possível salvar: ${error.message}`; }
+});
 $('manageUsersBtn').addEventListener('click', async () => {
   $('adminMenu').hidden = true;
   try { profiles = await listProfiles(); renderProfiles(); $('usersOverlay').classList.add('open'); }
   catch (error) { showToast(`Não foi possível carregar usuários: ${error.message}`); }
 });
 function renderProfiles() {
-  $('usersList').innerHTML = profiles.map((profile) => `<div class="user-row"><div><div class="user-email">${escapeHtml(profile.email || 'Conta sem e-mail')}</div><div class="user-created">Cadastro: ${escapeHtml(displayDate(String(profile.created_at || '').slice(0, 10)))}</div></div><select data-role="${escapeHtml(profile.id)}" aria-label="Permissão de ${escapeHtml(profile.email)}"><option value="pending" ${profile.role === 'pending' ? 'selected' : ''}>Pendente</option><option value="operator" ${profile.role === 'operator' ? 'selected' : ''}>Operador</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>Administrador</option></select></div>`).join('') || '<div class="empty">Nenhum usuário encontrado.</div>';
+  $('usersList').innerHTML = profiles.map((profile) => `<div class="user-row"><div><div class="user-email">${escapeHtml(profile.display_name || 'Sem nome')}</div><div class="user-created">${escapeHtml(profile.email || 'Conta sem e-mail')}${profile.phone ? ` · ${escapeHtml(profile.phone)}` : ''}</div></div><select data-role="${escapeHtml(profile.id)}" aria-label="Permissão de ${escapeHtml(profile.email)}"><option value="pending" ${profile.role === 'pending' ? 'selected' : ''}>Pendente</option><option value="technician" ${profile.role === 'technician' ? 'selected' : ''}>Técnico</option><option value="operator" ${profile.role === 'operator' ? 'selected' : ''}>Operador</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>Administrador</option></select></div>`).join('') || '<div class="empty">Nenhum usuário encontrado.</div>';
 }
 document.addEventListener('change', async (event) => {
   const roleSelect = event.target.closest('[data-role]');
@@ -216,7 +298,7 @@ if (!isSupabaseConfigured) {
   }));
   $('loginForm').addEventListener('submit', async (event) => { event.preventDefault(); clearErrors(); const { error } = await supabase.auth.signInWithPassword({ email: $('loginEmail').value.trim(), password: $('loginPassword').value }); if (error) $('loginError').textContent = error.message; });
   $('signupForm').addEventListener('submit', async (event) => {
-    event.preventDefault(); clearErrors(); const { data, error } = await supabase.auth.signUp({ email: $('signupEmail').value.trim(), password: $('signupPassword').value, options: { emailRedirectTo: `${window.location.origin}/` } });
+    event.preventDefault(); clearErrors(); const { data, error } = await supabase.auth.signUp({ email: $('signupEmail').value.trim(), password: $('signupPassword').value, options: { data: { full_name: $('signupName').value.trim() }, emailRedirectTo: `${window.location.origin}/` } });
     if (error) { $('signupError').textContent = error.message; return; } if (data.session) await showApp(data.session.user); else setAuthView('login', 'Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.');
   });
   $('recoveryForm').addEventListener('submit', async (event) => {
@@ -234,12 +316,34 @@ if (!isSupabaseConfigured) {
 
 document.addEventListener('click', (event) => {
   const close = event.target.closest('[data-close]'); if (close) { closeOverlay(close.dataset.close); if (close.dataset.close === 'resolveOverlay') renderClients(); return; }
+  const withdrawal = event.target.closest('[data-withdrawal]'); if (withdrawal) { openWithdrawalDetails(withdrawal.dataset.withdrawal); return; }
+  const visitAction = event.target.closest('[data-visit-result]'); if (visitAction) { openVisitForm(visitAction.dataset.visitResult); return; }
   const open = event.target.closest('[data-open]'); if (open) openDetails(open.dataset.open);
 });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { const resolving = $('resolveOverlay').classList.contains('open'); document.querySelectorAll('.overlay.open').forEach((overlay) => closeOverlay(overlay.id)); if (resolving) renderClients(); $('adminMenu').hidden = true; } });
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
 $('addBtn').addEventListener('click', () => { $('clientForm').reset(); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
+$('addWithdrawalBtn').addEventListener('click', () => { $('withdrawalForm').reset(); $('withdrawalError').textContent = ''; $('withdrawalFormOverlay').classList.add('open'); $('withdrawalName').focus(); });
+$('withdrawalSearch').addEventListener('input', renderWithdrawals);
+$('withdrawalForm').addEventListener('submit', async (event) => {
+  event.preventDefault(); $('withdrawalError').textContent = '';
+  if (!$('withdrawalForm').reportValidity()) return;
+  try { await createWithdrawal({ name: $('withdrawalName').value, phone: $('withdrawalPhone').value, address: $('withdrawalAddress').value, equipment: $('withdrawalEquipment').value }, sessionUser.id); closeOverlay('withdrawalFormOverlay'); await refreshWithdrawals(); showToast('Cliente adicionado à lista de retirada.'); }
+  catch (error) { $('withdrawalError').textContent = error.message; }
+});
+$('visitSave').addEventListener('click', async () => {
+  const observation = $('visitObservation').value.trim();
+  if (withdrawalVisitResult !== 'pending' && !observation) { $('visitError').textContent = 'Descreva o resultado da visita.'; $('visitObservation').focus(); return; }
+  try { await recordWithdrawalVisit(selectedWithdrawalId, withdrawalVisitResult, observation); closeOverlay('visitOverlay'); closeOverlay('withdrawalDetailOverlay'); await refreshWithdrawals(); showToast(withdrawalVisitResult === 'no_answer' ? 'Visita publicada na página principal para todos.' : 'Acompanhamento atualizado.'); }
+  catch (error) { $('visitError').textContent = `Não foi possível registrar: ${error.message}`; }
+});
+$('withdrawalCsvFile').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0]; if (!file) return;
+  if (!window.confirm(`Importar “${file.name}” para a lista de retirada? É necessário nome, endereço e equipamento.`)) { event.target.value = ''; return; }
+  try { const records = parseCsv(await file.text()); const result = await importWithdrawalsCsv(records, sessionUser.id); await refreshWithdrawals(); showToast(`${result.imported} importados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
+  catch (error) { showToast(`Falha ao importar a lista: ${error.message}`); } finally { event.target.value = ''; }
+});
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });
 $('clientForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('formError').textContent = ''; if (!$('clientForm').reportValidity()) return;
@@ -275,3 +379,4 @@ $('csvImportFile').addEventListener('change', async (event) => {
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
   catch (error) { showToast(`Falha na importação CSV: ${error.message}`); } finally { event.target.value = ''; }
 });
+
