@@ -132,7 +132,7 @@ function setView(view) {
     $(`${key}View`).hidden = key !== view;
     document.querySelector(`[data-view="${key}"]`).classList.toggle('active', key === view);
   }
-  const heading = { monthly: ['Visão mensal', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'], withdrawals: ['Retirada de ONU', 'Organize os contatos e as visitas dos técnicos.'] }[view];
+  const heading = { monthly: ['Visão geral', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'], withdrawals: ['Retirada de ONU', 'Organize os contatos e as visitas dos técnicos.'] }[view];
   $('pageTitle').textContent = heading[0]; $('pageSubtitle').textContent = heading[1];
   $('clientTools').hidden = view === 'withdrawals' || role === 'technician';
   $('withdrawalTools').hidden = view !== 'withdrawals';
