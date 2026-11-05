@@ -33,7 +33,7 @@ function setAuthView(view, message = '') {
 }
 async function showApp(user) {
   if (!user) {
-    sessionUser = null; $('appShell').hidden = true; $('authShell').hidden = false;
+    sessionUser = null; document.querySelector('.header-nav').hidden = true; $('appShell').hidden = true; $('authShell').hidden = false;
     $('userBadge').hidden = true; $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; $('profileMenuWrap').hidden = true; setAuthView('login'); return;
   }
   sessionUser = user; $('authShell').hidden = true; $('appShell').hidden = true;
@@ -45,10 +45,10 @@ async function showApp(user) {
     $('appShell').hidden = true; $('authShell').hidden = false;
     for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = true;
     $('authHeading').textContent = 'Acesso pendente'; $('authSubtitle').textContent = 'Seu cadastro ainda não foi autorizado.';
-    $('authMessage').textContent = 'Peça a um administrador do Controle FibraCenter para liberar seu acesso.';
+    document.querySelector('.header-nav').hidden = true; $('authMessage').textContent = 'Peça a um administrador do kontroll. para liberar seu acesso.';
     $('userBadge').textContent = user.email || 'Conta conectada'; $('userBadge').hidden = false; $('logoutButton').hidden = false; return;
   }
-  $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin'; $('profileMenuWrap').hidden = false;
+  document.querySelector('.header-nav').hidden = false; $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin'; $('profileMenuWrap').hidden = false;
   $('profileNameBadge').textContent = myProfile.display_name;
   document.querySelectorAll('[data-view="monthly"],[data-view="clients"],[data-view="reports"]').forEach((button) => { button.hidden = role === 'technician'; });
   $('withdrawalNav').hidden = false;
@@ -132,11 +132,10 @@ function setView(view) {
     $(`${key}View`).hidden = key !== view;
     document.querySelector(`[data-view="${key}"]`).classList.toggle('active', key === view);
   }
-  const heading = { monthly: ['Visão mensal', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'], withdrawals: ['Retirada de ONU', 'Organize os contatos e as visitas dos técnicos.'] }[view];
+  const heading = { monthly: ['Visão geral', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'], withdrawals: ['Retirada de ONU', 'Organize os contatos e as visitas dos técnicos.'] }[view];
   $('pageTitle').textContent = heading[0]; $('pageSubtitle').textContent = heading[1];
   $('clientTools').hidden = view === 'withdrawals' || role === 'technician';
   $('withdrawalTools').hidden = view !== 'withdrawals';
-  $('notice').hidden = view === 'withdrawals';
   if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
 }
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
