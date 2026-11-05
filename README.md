@@ -10,9 +10,9 @@ Esta pasta adiciona a infraestrutura online sem trocar a interface principal: Vi
 
 - `pending`: toda conta criada pelo formulário público começa sem acesso aos dados.
 - `operator`: pode ler, cadastrar e atualizar a lista compartilhada.
-- `admin`: tem as permissões de operador e pode excluir cadastros.
+- `admin`: tem as permissões de operador, pode excluir cadastros e autorizar usuários pelo menu de três linhas no topo.
 
-O banco repete essas regras com RLS, portanto esconder botões na interface não é a barreira de segurança. Um administrador autoriza operadores pelo SQL Editor do Supabase. Isso evita que qualquer pessoa que encontre o endereço público se cadastre e passe a ler os dados dos clientes.
+O banco repete essas regras com RLS, portanto esconder botões na interface não é a barreira de segurança. Um administrador libera operadores pelo menu **Autorizar usuários**. A primeira conta admin deve ser promovida uma vez pelo SQL Editor. Isso evita que qualquer pessoa que encontre o endereço público se cadastre e passe a ler os dados dos clientes.
 
 ## Requisitos
 
@@ -23,7 +23,7 @@ O banco repete essas regras com RLS, portanto esconder botões na interface não
 ## 1. Criar o projeto no Supabase
 
 1. Crie um projeto no Supabase e escolha uma senha forte para o banco. A senha do banco não é usada pela aplicação.
-2. No painel do projeto, abra **SQL Editor** e execute todo o arquivo `supabase/migrations/202611050001_shared_clients.sql`.
+2. No painel do projeto, abra **SQL Editor** e execute primeiro `supabase/migrations/202611050001_shared_clients.sql` e depois `supabase/migrations/202611050002_csv_monthly_reporting.sql`.
 3. Em **Project Settings → API Keys**, copie a Project URL e a chave **Publishable** (`sb_publishable_...`). A antiga chave `anon` também é uma chave pública de cliente, mas prefira a Publishable nos projetos novos.
 4. Em **Authentication → Providers → Email**, mantenha habilitado o provedor de e-mail. Em produção, configure o envio/SMTP de e-mails para confirmações e recuperação de senha.
 5. Em **Authentication → URL Configuration**, configure:
@@ -118,3 +118,31 @@ Para publicar mudanças posteriores no esquema, adicione uma nova migração em 
 - [Chaves Publishable e Secret](https://supabase.com/docs/guides/getting-started/api-keys)
 - [Row Level Security no PostgreSQL](https://supabase.com/docs/guides/database/postgres/row-level-security)
 - [Vite na Vercel](https://vercel.com/docs/frameworks/frontend/vite)
+
+# Complemento: importação CSV, visão mensal e relatórios
+
+## Importar a planilha de clientes suspensos
+
+Entre com uma conta autorizada e use **Importar CSV**. O importador aceita o CSV da planilha `clientes suspensos - Clientes.csv`, incluindo acentos, cabeçalhos com espaços, vírgulas e campos CSV entre aspas. Ele reconhece:
+
+- `ID OCORRÊNCIA` como identificador de atualização, para uma reimportação atualizar o mesmo cadastro;
+- `CONTRATO - NOME/RAZÃO SOCIAL` como número do contrato;
+- a terceira coluna sem título como nome do cliente;
+- `Endereço`, `Bairro`, `Cidade`, `NEGATIVADO`, `DATA NEGATIVAÇÃO` e `DATA REGULARIZAÇÃO`;
+- todos os outros campos como dados de origem em `source_data`, mantendo observações, datas de contato e dados de equipamento.
+
+São criados cadastros apenas quando há nome, contrato, endereço, bairro e cidade. Linhas incompletas são ignoradas e o resumo informa quantas foram ignoradas. No arquivo fornecido, 280 linhas contêm dados de cliente completos e 172 linhas `NÃO` não possuem identificação nem endereço; essas 172 linhas não viram cadastros vazios.
+
+Situações suportadas: `REGULARIZADO`, `SIM`, `NÃO` e `EM CONTATO`. A situação antiga `NEGATIVADO` é mantida no campo legado para compatibilidade com o esquema atual. Clientes importados como regularizados recebem a observação original quando preenchida; quando não há texto de regularização na planilha, o sistema registra que o item foi importado da planilha.
+
+## Navegação e relatórios
+
+- A **Visão mensal** abre por padrão e mostra, para cada mês, quem foi negativado e quem foi regularizado, com contagens e datas. Selecionar o nome abre o cadastro.
+- Em **Clientes**, altere a situação para `SIM`, `NÃO`, `EM CONTATO` ou `REGULARIZADO`. A regularização continua exigindo a descrição do que foi feito.
+- Em **Relatórios**, a pizza de negativações agrupa ocorrências pelo mês da data de negativação; a pizza de situação total conta clientes atuais por situação; o gráfico de colunas compara regularizações registradas por mês com clientes atualmente `SIM` agrupados pelo mês da negativação.
+- Administradores abrem o menu de três linhas no topo para autorizar, rebaixar ou tornar administradores de usuários cadastrados.
+- O tema claro/escuro é alternado pelo ícone no topo.
+
+## Migração do banco
+
+Depois de aplicar a migração anterior, aplique também `supabase/migrations/202611050002_csv_monthly_reporting.sql` no SQL Editor do Supabase. Ela adiciona os campos de situação da planilha, datas de evento, ID da ocorrência e os dados originais em JSON. Não edite uma migração que já tenha sido executada.
