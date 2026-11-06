@@ -129,11 +129,11 @@ Situações suportadas: `REGULARIZADO`, `SIM`, `NÃO` e `EM CONTATO`. A situaç�
 
 ## Navegação e relatórios
 
-- A **Visão mensal** abre por padrão e mostra, para cada mês, quem foi negativado e quem foi regularizado, com contagens e datas. Selecionar o nome abre o cadastro.
-- Em **Clientes**, altere a situação para `SIM`, `NÃO`, `EM CONTATO` ou `REGULARIZADO`. A regularização continua exigindo a descrição do que foi feito.
-- Em **Relatórios**, a pizza de negativações agrupa ocorrências pelo mês da data de negativação; a pizza de situação total conta clientes atuais por situação; o gráfico de colunas compara regularizações registradas por mês com clientes atualmente `SIM` agrupados pelo mês da negativação. Essa página fica disponível apenas para operadores e administradores.
+- A **Visão geral** exibe somente totais e evolução mensal, sem nomes de clientes. Inclui retiradas confirmadas, pendências e totais por técnico.
+- Em **Negativações → Clientes**, altere a situação para `SIM`, `NÃO`, `EM CONTATO` ou `REGULARIZADO`. A regularização continua exigindo a descrição do que foi feito.
+- Em **Negativações → Relatórios**, a pizza de negativações agrupa ocorrências pelo mês da data de negativação; a pizza de situação total conta clientes atuais por situação; o gráfico de colunas compara regularizações registradas por mês com clientes atualmente `SIM` agrupados pelo mês da negativação. Essa página fica disponível apenas para operadores e administradores.
 - Administradores abrem o menu de três linhas no topo para autorizar, rebaixar ou tornar administradores de usuários cadastrados.
-- O tema claro/escuro é alternado pelo ícone no topo.
+- No computador, o tema é alternado pelo ícone no topo. No celular, navegação, tema e conta ficam no menu de três linhas. O tema escolhido persiste no login; a primeira visita usa tema claro.
 
 ## Migração do banco
 
@@ -146,3 +146,20 @@ Cadastros criados em `supabase/migrations/202611050003_technician_withdrawals.sq
 No menu de usuários, um administrador pode autorizar cada conta como **Técnico**, **Atendente**, **Operador**, **Administrador** ou manter **Pendente**. A conta deve ser cadastrada com nome completo; cada pessoa edita também o telefone opcional em **Minha conta**. Técnicos e atendentes veem a lista de retirada, abrem o cliente e marcam **Ainda não fui**, **Já fui** ou **Não encontrei ninguém**. Visitas sem contato ficam registradas com o nome da pessoa e aparecem na visão geral para os demais usuários autorizados.
 
 Na página **Retirada de ONU**, o cadastro exige nome, endereço e equipamento; telefone é opcional. O CSV aceita cabeçalhos como `Nome`, `Telefone`, `Endereço`, `Equipamento` (também reconhece `Rua`, `Bairro`, `Cidade`, `Modelo` e `ONU`). Endereços em colunas de rua/bairro/cidade são reunidos. O importador detecta separador por vírgula, ponto e vírgula ou tabulação e ignora linhas sem nome, endereço ou equipamento.
+
+## Atualização do dashboard e navegação
+
+Após as migrações anteriores, aplique em ordem:
+
+1. `supabase/migrations/20261106180115_confirmed_equipment_collection.sql`
+2. `supabase/migrations/20261106180424_restrict_anonymous_functions.sql`
+
+A primeira inclui o resultado **Equipamento retirado**, sempre com observação obrigatória e identificação do usuário no servidor. O total de retiradas concluídas conta um cadastro por vez, considerando o último resultado. Visitas antigas marcadas apenas como **Já fui** não são convertidas automaticamente em recolhimentos. A segunda remove permissões anônimas explícitas das funções internas; usuários autorizados continuam usando as mesmas políticas RLS.
+
+A aba **Negativações** reúne Clientes e Relatórios. Em Clientes, os quadros **Clientes em acompanhamento** (SIM/NÃO), **Em contato** e **Regularizados** podem ser recolhidos e expandidos. Administradores e operadores acessam todas as páginas; atendentes acessam Clientes e Retirada de ONU; técnicos acessam somente Retirada de ONU.
+
+A aba atual é salva por usuário em `sessionStorage`. Renovar a sessão ou voltar ao navegador não reinicia a tela nem os formulários abertos. Atualizar a página recupera a aba, mas não recupera formulários ainda não enviados. O tema usa `localStorage`.
+
+Os gráficos mensais contam as datas cadastradas de negativação e regularização, incluindo meses intermediários sem eventos. O sistema não mantém ciclos anteriores de negativação de um mesmo cadastro. As consultas são paginadas para que os totais não parem nos primeiros 1.000 registros.
+
+Validação: testes de interface com dados fictícios para os quatro perfis, em 390px e 1280px; totais, grupos, navegação, renovação de sessão, tema e sobreposição da conta. A função de retirada foi testada no banco em uma transação revertida, verificando atribuição do técnico e rejeição de observação vazia. Nenhum registro de teste foi mantido.

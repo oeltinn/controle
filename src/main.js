@@ -13,6 +13,10 @@ let withdrawalVisits = [];
 let myProfile = null;
 let selectedWithdrawalId = null;
 let withdrawalVisitResult = 'pending';
+let appLoading = false;
+let currentView = 'monthly';
+let recoveryMode = false;
+let authRevision = 0;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -32,36 +36,49 @@ function showWelcome(user) {
   localStorage.setItem(sessionKey, '1');
 }
 function setAuthView(view, message = '') {
+  document.body.dataset.auth = 'true';
   $('authShell').hidden = false; $('appShell').hidden = true;
   $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true;
   $('profileMenuWrap').hidden = true;
   for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = id !== `${view}Form`;
-  const titles = { login: ['Entrar', 'Acesse o controle compartilhado de clientes.'], signup: ['Criar usuário', 'Novos usuários recebem acesso pendente.'], recovery: ['Recuperar senha', 'Enviaremos um link para o e-mail cadastrado.'], newPassword: ['Criar nova senha', 'Escolha uma nova senha para sua conta.'] };
+  const titles = { login: ['Entrar', ''], signup: ['Criar usuário', 'Novos usuários recebem acesso pendente.'], recovery: ['Recuperar senha', 'Enviaremos um link para o e-mail cadastrado.'], newPassword: ['Criar nova senha', 'Escolha uma nova senha para sua conta.'] };
   const [heading, subtitle] = titles[view] || titles.login;
   $('authHeading').textContent = heading; $('authSubtitle').textContent = subtitle; $('authMessage').textContent = message;
 }
 async function showApp(user) {
+  if (user?.id === sessionUser?.id && (appLoading || !$('appShell').hidden)) { sessionUser = user; return; }
   if (!user) {
+    authRevision++;
     if (sessionUser) sessionStorage.removeItem(`kontroll-welcome:${sessionUser.id}`);
+    appLoading = false; document.querySelectorAll('.overlay.open').forEach((el) => closeOverlay(el.id));
     sessionUser = null; document.querySelector('.header-nav').hidden = true; $('appShell').hidden = true; $('authShell').hidden = false;
     $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; $('profileMenuWrap').hidden = true; setAuthView('login'); return;
   }
+  const revision = ++authRevision;
+  appLoading = true; document.body.dataset.auth = 'false';
   sessionUser = user; $('authShell').hidden = true; $('appShell').hidden = true;
   $('logoutButton').hidden = false; role = 'pending';
   try {
-    myProfile = await getMyProfile(user.id); role = myProfile?.role || 'pending';
+    const profile = await getMyProfile(user.id);
+    if (revision !== authRevision) return;
+    myProfile = profile; role = myProfile?.role || 'pending';
   } catch (error) { showToast(`Não foi possível consultar o perfil: ${error.message}`); }
+  if (revision !== authRevision) return;
+  appLoading = false; document.body.dataset.role = role;
+  $('mobileProfileName').textContent = myProfile?.display_name || 'Minha conta';
+  $('adminMenuWrap').hidden = false; $('manageUsersBtn').hidden = role !== 'admin';
   $('profileMenuWrap').hidden = false; $('profileNameBadge').textContent = myProfile?.display_name || 'Minha conta';
   if (!['admin', 'operator', 'technician', 'attendant'].includes(role)) {
+    document.querySelectorAll('[data-view]').forEach((button) => { button.hidden = true; });
     $('appShell').hidden = true; $('authShell').hidden = false;
     for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = true;
     $('authHeading').textContent = 'Acesso pendente'; $('authSubtitle').textContent = 'Seu cadastro ainda não foi autorizado.';
     document.querySelector('.header-nav').hidden = true; $('authMessage').textContent = 'Peça a um administrador do kontroll. para liberar seu acesso.';
     return;
   }
-  document.querySelector('.header-nav').hidden = false; $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = role !== 'admin';
+  document.querySelector('.header-nav').hidden = false; $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = false;
   $('profileNameBadge').textContent = myProfile.display_name;
-  document.querySelectorAll('.header-nav .view-tab').forEach((button) => {
+  document.querySelectorAll('[data-view]').forEach((button) => {
     const view = button.dataset.view;
     button.hidden = (view === 'monthly' && ['technician', 'attendant'].includes(role))
       || (view === 'clients' && role === 'technician')
@@ -69,9 +86,7 @@ async function showApp(user) {
   });
   $('clientTools').hidden = role === 'technician';
   $('authShell').hidden = true; $('appShell').hidden = false;
-  if (role === 'technician') setView('withdrawals');
-  else if (role === 'attendant') setView('clients');
-  else setView('monthly');
+  setView(sessionStorage.getItem(`kontroll-view:${user.id}`) || 'monthly');
   await refreshClients();
   showWelcome(user);
 }
@@ -82,15 +97,20 @@ async function refreshClients() {
     catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
     return;
   }
-  try { clients = await listClients(); renderClients(); renderMonthly(); renderReports(); [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderNoAnswerVisits(); }
+  try { clients = await listClients(); renderClients(); renderMonthly(); renderReports(); [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
   catch (error) { showToast(`Não foi possível carregar os dados: ${error.message}`); }
 }
 function currentStatus(client) {
   return client.negativado_status || (client.status === 'REGULARIZADO' ? 'REGULARIZADO' : 'SIM');
 }
 function renderClients() {
-  const active = clients.filter((client) => currentStatus(client) !== 'REGULARIZADO').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const active = clients.filter((client) => !['REGULARIZADO', 'EM CONTATO'].includes(currentStatus(client))).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const regularized = clients.filter((client) => currentStatus(client) === 'REGULARIZADO').sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const contacting = clients.filter((client) => currentStatus(client) === 'EM CONTATO').sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
+  $('countContact').textContent = contacting.length;
+  drawList('listContact', contacting, $('searchContact').value);
+  $('summaryNeg').textContent = clients.filter((client) => currentStatus(client) === 'SIM').length;
+  $('summaryReg').textContent = regularized.length;
   $('countNeg').textContent = active.length; $('countReg').textContent = regularized.length;
   $('summaryClients').textContent = clients.length;
   drawList('listNeg', active, $('searchNeg').value); drawList('listReg', regularized, $('searchReg').value);
@@ -132,6 +152,7 @@ function clearErrors() { for (const id of ['loginError', 'signupError', 'recover
 
 function setTheme(theme) {
   document.body.dataset.theme = theme; localStorage.setItem('fibra_theme', theme);
+  $('mobileThemeToggle').textContent = theme === 'dark' ? '☀ Modo claro' : '☾ Modo noturno';
   $('themeIcon').textContent = theme === 'dark' ? '☀' : '☾';
   $('themeToggle').setAttribute('aria-label', theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo noturno');
   $('themeToggle').title = theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo noturno';
@@ -140,18 +161,27 @@ $('themeToggle').addEventListener('click', () => setTheme(document.body.dataset.
 setTheme(localStorage.getItem('fibra_theme') || 'light');
 
 function setView(view) {
-  if (role === 'technician' && view !== 'withdrawals') return;
-  if (role === 'attendant' && !['clients', 'withdrawals'].includes(view)) return;
-  for (const key of ['monthly', 'clients', 'reports', 'withdrawals']) {
-    $(`${key}View`).hidden = key !== view;
-    document.querySelector(`[data-view="${key}"]`).classList.toggle('active', key === view);
-  }
-  const heading = { monthly: ['Visão geral', 'Acompanhe negativados e regularizações mês a mês.'], clients: ['Clientes', 'Pesquise cadastros e atualize a situação de cada cliente.'], reports: ['Relatórios', 'Gráficos resumidos para apresentar os resultados.'], withdrawals: ['Retirada de ONU', 'Organize os contatos e as visitas dos técnicos.'] }[view];
-  $('pageTitle').textContent = heading[0]; $('pageSubtitle').textContent = heading[1];
-  $('clientTools').hidden = view === 'withdrawals' || role === 'technician';
-  $('withdrawalTools').hidden = view !== 'withdrawals';
+  const allowed = role === 'technician' ? ['withdrawals'] : role === 'attendant' ? ['clients','withdrawals'] : ['monthly','clients','reports','withdrawals'];
+  if (!allowed.includes(view)) view = allowed[0];
+  currentView = view;
+  if (sessionUser) sessionStorage.setItem(`kontroll-view:${sessionUser.id}`, view);
+  for (const key of ['monthly','clients','reports','withdrawals']) $(`${key}View`).hidden = key !== view;
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    button.hidden = !allowed.includes(button.dataset.view);
+    const active = button.dataset.view === view || (button.dataset.view === 'clients' && view === 'reports' && !button.closest('#negSubnav'));
+    button.classList.toggle('active',active);
+    if (active) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');
+  });
+  $('negSubnav').hidden = !['clients','reports'].includes(view);
+  const heading = { monthly:['Visão geral','Resultados da operação em um só lugar.'], clients:['Negativações','Pesquise cadastros e acompanhe cada situação.'], reports:['Negativações','Relatórios e indicadores dos clientes.'], withdrawals:['Retirada de ONU','Organize os contatos e as visitas dos técnicos.'] }[view];
+  $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
+  $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals';
+  closeMenu();
+  if (view === 'monthly') renderMonthly();
   if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
 }
+function closeMenu() { $('adminMenu').hidden=true; $('adminMenuToggle').setAttribute('aria-expanded','false'); }
+
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 
 function latestVisit(withdrawalId) { return withdrawalVisits.find((visit) => visit.withdrawal_id === withdrawalId) || null; }
@@ -159,26 +189,36 @@ function renderWithdrawals() {
   const term = $('withdrawalSearch').value.trim().toLocaleLowerCase('pt-BR');
   const filtered = withdrawals.filter((item) => `${item.name} ${item.address} ${item.equipment}`.toLocaleLowerCase('pt-BR').includes(term));
   $('withdrawalCount').textContent = withdrawals.length;
-  $('summaryWithdrawals').textContent = withdrawals.length;
+  $('summaryWithdrawals').textContent = withdrawals.filter((item) => latestVisit(item.id)?.result !== 'collected').length;
   $('withdrawalVisitsCount').textContent = withdrawalVisits.length;
   $('withdrawalList').innerHTML = filtered.length ? filtered.map((item) => {
     const visit = latestVisit(item.id);
-    const label = visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi';
-    const tag = visit?.result === 'no_answer' ? 'missed' : visit?.result === 'visited' ? 'visited' : 'pending';
+    const label = visit?.result === 'collected' ? 'Equipamento retirado' : visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi';
+    const tag = visit?.result === 'collected' ? 'collected' : visit?.result === 'no_answer' ? 'missed' : visit?.result === 'visited' ? 'visited' : 'pending';
     return `<button class="withdrawal-card" data-withdrawal="${escapeHtml(item.id)}"><span class="withdrawal-name">${escapeHtml(item.name)}</span><span class="withdrawal-address">${escapeHtml(item.address)}</span><span class="withdrawal-meta">${escapeHtml(item.equipment)}<i class="visit-tag ${tag}">${label}</i></span></button>`;
   }).join('') : `<div class="empty">${term ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes na lista de retirada.'}</div>`;
 }
 function renderNoAnswerVisits() {
+  const latest = withdrawals.map((item) => latestVisit(item.id)).filter(Boolean);
+  const collected = latest.filter((visit) => visit.result === 'collected');
+  $('summaryCollected').textContent = collected.length;
+  const technicians = new Map();
+  for (const visit of collected) {
+    const key = visit.technician_id;
+    const item = technicians.get(key) || { name: visit.technician_name, count: 0 };
+    item.count++; technicians.set(key,item);
+  }
+  $('technicianStats').innerHTML = [...technicians.values()].sort((a,b)=>b.count-a.count).map((item)=>`<div class="technician-row"><span>${escapeHtml(item.name)}</span><strong>${item.count} retirada(s)</strong></div>`).join('') || '<div class="empty">Nenhuma retirada confirmada ainda.</div>';
+  $('summaryNoAnswers').textContent = latest.filter((visit) => visit.result === 'no_answer').length;
   const missed = withdrawalVisits.filter((visit) => visit.result === 'no_answer');
   $('noAnswerCount').textContent = missed.length;
-  $('summaryNoAnswers').textContent = missed.length;
   $('noAnswerList').innerHTML = missed.length ? missed.map((visit) => {
     const client = withdrawals.find((item) => item.id === visit.withdrawal_id);
     return `<article class="incident-card"><div class="incident-title">${escapeHtml(client?.name || 'Cliente')} <span>${escapeHtml(displayDate(String(visit.created_at).slice(0,10)))}</span></div><div class="incident-copy"><strong>${escapeHtml(visit.technician_name)}</strong> foi até o endereço, mas não encontrou ninguém.</div><div class="incident-note">${escapeHtml(visit.observation)}</div></article>`;
   }).join('') : '<div class="empty">Nenhum registro de visita sem contato.</div>';
 }
 async function refreshWithdrawals() {
-  if (!sessionUser || !['admin','operator','technician'].includes(role)) return;
+  if (!sessionUser || !['admin','operator','technician','attendant'].includes(role)) return;
   try { [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
   catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
 }
@@ -189,14 +229,14 @@ function openWithdrawalDetails(id) {
   $('withdrawalDetailName').textContent = item.name;
   $('withdrawalDetailFields').innerHTML = [
     ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
-    ['Situação', visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi'],
+    ['Situação', visit?.result === 'collected' ? 'Equipamento retirado' : visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi'],
     ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
   ].map(([label, value]) => `<div class="field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
   $('withdrawalDetailOverlay').classList.add('open');
 }
 function openVisitForm(result) {
   withdrawalVisitResult = result;
-  const labels = { pending: 'Marcar como ainda não foi', visited: 'Registrar visita realizada', no_answer: 'Registrar que não encontrou ninguém' };
+  const labels = { collected: 'Confirmar equipamento retirado', pending: 'Marcar como ainda não foi', visited: 'Registrar visita realizada', no_answer: 'Registrar que não encontrou ninguém' };
   $('visitTitle').textContent = labels[result];
   $('visitObservation').value = '';
   $('visitObservation').required = result !== 'pending';
@@ -209,17 +249,36 @@ function openVisitForm(result) {
 function monthKey(value) { return value ? String(value).slice(0, 7) : ''; }
 function monthLabel(key) { if (!key) return 'Sem data'; const [year, month] = key.split('-'); return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); }
 function renderMonthly() {
-  const months = new Set();
-  clients.forEach((client) => { if (negativeDate(client)) months.add(monthKey(negativeDate(client))); if (regularDate(client)) months.add(monthKey(regularDate(client))); });
-  const sorted = [...months].filter(Boolean).sort().reverse();
-  if (!sorted.length) { $('monthlyCards').innerHTML = '<section class="panel"><div class="empty">Ainda não há datas de negativação ou regularização cadastradas.</div></section>'; return; }
-  $('monthlyCards').innerHTML = sorted.map((month) => {
-    const negs = clients.filter((client) => monthKey(negativeDate(client)) === month);
-    const regs = clients.filter((client) => monthKey(regularDate(client)) === month);
-    const renderEventList = (list, dateFn) => list.length ? `<ul class="month-list">${list.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map((client) => `<li><button data-open="${escapeHtml(client.id)}">${escapeHtml(client.name)}</button><small>${escapeHtml(displayDate(dateFn(client)))}</small></li>`).join('')}</ul>` : '<div class="empty">Nenhum registro neste mês.</div>';
-    return `<article class="month-card"><div class="month-head"><h2>${escapeHtml(monthLabel(month))}</h2><div class="month-counts">${negs.length} negativado(s) · ${regs.length} regularizado(s)</div></div><div class="month-body"><h3>Negativados no mês (${negs.length})</h3>${renderEventList(negs, negativeDate)}<h3>Regularizados no mês (${regs.length})</h3>${renderEventList(regs, regularDate)}</div></article>`;
+  const counts = new Map();
+  for (const client of clients) {
+    for (const [value, type] of [[negativeDate(client),'negative'],[regularDate(client),'regular']]) {
+      const month = monthKey(value); if (!/^\d{4}-\d{2}$/.test(month)) continue;
+      const item = counts.get(month) || {negative:0,regular:0}; item[type]++; counts.set(month,item);
+    }
+  }
+  const keys = [...counts.keys()].sort();
+  if (!keys.length) { $('monthlyCards').innerHTML='<div class="empty">Ainda não há datas registradas para mostrar a evolução.</div>'; return; }
+  const months = [];
+  let [year,month] = keys[0].split('-').map(Number);
+  const last = keys.at(-1);
+  while (true) {
+    const key = `${year}-${String(month).padStart(2,'0')}`;
+    if (key > last) break; months.push(key);
+    month++; if (month > 12) { month=1; year++; }
+  }
+  const width = Math.max(320,$('monthlyCards').clientWidth-40,months.length*75), height=280, left=42, top=25, plotH=190;
+  const max=Math.ceil(Math.max(1,...[...counts.values()].flatMap(item=>[item.negative,item.regular]))/4)*4;
+  const x=(i)=>left+(months.length===1 ? (width-left-25)/2 : i*(width-left-25)/(months.length-1));
+  const y=(n)=>top+plotH-(n/max)*plotH;
+  const grid=[0,.25,.5,.75,1].map(f=>`<line x1="${left}" y1="${y(max*f)}" x2="${width-12}" y2="${y(max*f)}" stroke="var(--line)"/><text x="30" y="${y(max*f)+4}" text-anchor="end" fill="var(--muted)" font-size="11">${Math.round(max*f)}</text>`).join('');
+  const lines=[['negative','#df665f','Negativações'],['regular','#138777','Regularizações']].map(([type,color,label])=>{
+    const points=months.map((key,i)=>`${x(i)},${y(counts.get(key)?.[type]||0)}`).join(' ');
+    return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round"/>${months.map((key,i)=>`<circle cx="${x(i)}" cy="${y(counts.get(key)?.[type]||0)}" r="4" fill="${color}"><title>${monthLabel(key)} — ${label}: ${counts.get(key)?.[type]||0}</title></circle>`).join('')}`;
   }).join('');
+  const labels=months.map((key,i)=>`<text x="${x(i)}" y="245" text-anchor="middle" fill="var(--muted)" font-size="11">${key.slice(5)}/${key.slice(2,4)}</text>`).join('');
+  $('monthlyCards').innerHTML=`<div class="trend-scroll"><svg style="width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Evolução mensal de negativações e regularizações. Valores disponíveis na tabela abaixo.">${grid}${lines}${labels}</svg></div><div class="chart-legend"><span class="legend-item"><i class="legend-swatch" style="background:#df665f"></i>Negativações</span><span class="legend-item"><i class="legend-swatch" style="background:#138777"></i>Regularizações</span></div><details><summary class="panel-head">Ver totais por mês</summary><div class="table-scroll"><table class="overview-table"><thead><tr><th scope="col">Mês</th><th scope="col">Negativações</th><th scope="col">Regularizações</th></tr></thead><tbody>${months.map(key=>`<tr><th scope="row">${monthLabel(key)}</th><td>${counts.get(key)?.negative||0}</td><td>${counts.get(key)?.regular||0}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
+
 const chartColors = ['#138777', '#df665f', '#e5ae45', '#4987c7', '#9168c4', '#3b9c71', '#db7ea1', '#667085', '#50a9b2', '#ba7b45'];
 function pieSvg(data) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
@@ -261,11 +320,14 @@ function renderReports() {
 $('adminMenuToggle').addEventListener('click', () => {
   const menu = $('adminMenu'); menu.hidden = !menu.hidden; $('adminMenuToggle').setAttribute('aria-expanded', String(!menu.hidden));
 });
+$('mobileThemeToggle').addEventListener('click', () => $('themeToggle').click());
+$('mobileProfileButton').addEventListener('click', () => { closeMenu(); $('profileMenuToggle').click(); });
+document.addEventListener('click', (event) => { if (!event.target.closest('#adminMenuWrap')) closeMenu(); });
 $('profileMenuToggle').addEventListener('click', () => { $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileEmail').value = sessionUser?.email || ''; $('profileError').textContent = ''; $('passwordChangeForm').reset(); $('passwordChangeError').textContent = ''; });
 $('profileForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('profileError').textContent = '';
   const displayName = $('profileName').value.trim(); if (!displayName) { $('profileError').textContent = 'O nome é obrigatório.'; return; }
-  try { myProfile = await updateMyProfile(sessionUser.id, { display_name: displayName, phone: $('profilePhone').value }); $('profileNameBadge').textContent = myProfile.display_name; closeOverlay('profileOverlay'); showToast('Dados da conta atualizados.'); }
+  try { myProfile = await updateMyProfile(sessionUser.id, { display_name: displayName, phone: $('profilePhone').value }); $('profileNameBadge').textContent = myProfile.display_name; $('mobileProfileName').textContent = myProfile.display_name; closeOverlay('profileOverlay'); showToast('Dados da conta atualizados.'); }
   catch (error) { $('profileError').textContent = `Não foi possível salvar: ${error.message}`; }
 });
 $('passwordChangeForm').addEventListener('submit', async (event) => {
@@ -330,11 +392,15 @@ if (!isSupabaseConfigured) {
   });
   $('newPasswordForm').addEventListener('submit', async (event) => {
     event.preventDefault(); clearErrors(); const { data, error } = await supabase.auth.updateUser({ password: $('newPassword').value });
-    if (error) { $('newPasswordError').textContent = error.message; return; } await showApp(data.user); showToast('Senha atualizada.'); history.replaceState({}, '', window.location.pathname);
+    if (error) { $('newPasswordError').textContent = error.message; return; } recoveryMode = false; await showApp(data.user); showToast('Senha atualizada.'); history.replaceState({}, '', window.location.pathname);
   });
   $('logoutButton').addEventListener('click', async () => { closeOverlay('profileOverlay'); const { error } = await supabase.auth.signOut(); if (error) showToast(`Não foi possível sair: ${error.message}`); });
-  supabase.auth.onAuthStateChange((event, session) => { window.setTimeout(() => { if (event === 'PASSWORD_RECOVERY') setAuthView('newPassword'); else void showApp(session?.user || null); }, 0); });
-  supabase.auth.getSession().then(({ data, error }) => { if (error) { setAuthView('login', error.message); return; } if (new URLSearchParams(window.location.search).has('reset')) setAuthView('newPassword'); else void showApp(data.session?.user || null); });
+  supabase.auth.onAuthStateChange((event, session) => { window.setTimeout(() => {
+    if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; setAuthView('newPassword'); }
+    else if (event === 'SIGNED_OUT') { recoveryMode = false; void showApp(null); }
+    else if (!recoveryMode) void showApp(session?.user || null);
+  }, 0); });
+  supabase.auth.getSession().then(({ data, error }) => { if (error) { setAuthView('login', error.message); return; } if (new URLSearchParams(window.location.search).has('reset')) { recoveryMode = true; setAuthView('newPassword'); } else void showApp(data.session?.user || null); });
 }
 
 document.addEventListener('click', (event) => {
@@ -358,7 +424,7 @@ $('withdrawalForm').addEventListener('submit', async (event) => {
 $('visitSave').addEventListener('click', async () => {
   const observation = $('visitObservation').value.trim();
   if (withdrawalVisitResult !== 'pending' && !observation) { $('visitError').textContent = 'Descreva o resultado da visita.'; $('visitObservation').focus(); return; }
-  try { await recordWithdrawalVisit(selectedWithdrawalId, withdrawalVisitResult, observation); closeOverlay('visitOverlay'); closeOverlay('withdrawalDetailOverlay'); await refreshWithdrawals(); showToast(withdrawalVisitResult === 'no_answer' ? 'Visita publicada na página principal para todos.' : 'Acompanhamento atualizado.'); }
+  try { await recordWithdrawalVisit(selectedWithdrawalId, withdrawalVisitResult, observation); closeOverlay('visitOverlay'); closeOverlay('withdrawalDetailOverlay'); await refreshWithdrawals(); showToast(withdrawalVisitResult === 'no_answer' ? 'Visita registrada e resumo atualizado.' : 'Acompanhamento atualizado.'); }
   catch (error) { $('visitError').textContent = `Não foi possível registrar: ${error.message}`; }
 });
 $('withdrawalCsvFile').addEventListener('change', async (event) => {
@@ -381,6 +447,7 @@ $('resolveSave').addEventListener('click', async () => {
     closeOverlay('resolveOverlay'); pendingId = null; await refreshClients(); if (selectedId === client.id) openDetails(client.id); showToast('Cliente movido para regularizados.');
   } catch (error) { $('resolveError').textContent = `Não foi possível salvar: ${error.message}`; }
 });
+$('searchContact').addEventListener('input', renderClients);
 $('searchNeg').addEventListener('input', renderClients); $('searchReg').addEventListener('input', renderClients);
 $('deleteBtn').addEventListener('click', async () => {
   const client = clients.find((item) => item.id === selectedId); if (!client || role !== 'admin') return;
@@ -393,4 +460,5 @@ $('csvImportFile').addEventListener('change', async (event) => {
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
   catch (error) { showToast(`Falha na importação CSV: ${error.message}`); } finally { event.target.value = ''; }
 });
+
 

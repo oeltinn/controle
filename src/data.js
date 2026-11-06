@@ -6,7 +6,17 @@ function unwrap(result) {
 }
 
 export async function listClients() {
-  return unwrap(await supabase.from('clients').select('*').order('name', { ascending: true }));
+  return listAll('clients', 'name');
+}
+
+// Supabase caps each response; dashboards must include every page.
+async function listAll(table, sort, ascending = true) {
+  const rows = [];
+  for (let start = 0; ; start += 1000) {
+    const page = unwrap(await supabase.from(table).select('*').order(sort, { ascending }).order('id').range(start, start + 999));
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
 }
 
 export async function listProfiles() {
@@ -163,7 +173,7 @@ export function normalizeWithdrawalCsv(records, userId) {
 }
 
 export async function listWithdrawals() {
-  return unwrap(await supabase.from('onu_withdrawals').select('*').order('name'));
+  return listAll('onu_withdrawals', 'name');
 }
 
 export async function createWithdrawal(values, userId) {
@@ -179,7 +189,7 @@ export async function importWithdrawalsCsv(records, userId) {
 }
 
 export async function listWithdrawalVisits() {
-  return unwrap(await supabase.from('onu_withdrawal_visits').select('*').order('created_at', { ascending: false }).limit(1000));
+  return listAll('onu_withdrawal_visits', 'created_at', false);
 }
 
 export async function recordWithdrawalVisit(withdrawalId, result, observation) {
