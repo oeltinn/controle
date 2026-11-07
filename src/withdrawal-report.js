@@ -5,10 +5,12 @@ const monthLabel = month => month.split('-').reverse().join('/');
 const escape = value => String(value).replace(/[&<>"']/g, char =>
   ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'})[char]);
 const series = [
-  ['attempts', 'Tentativas', 'attempts'],
-  ['collected', 'Equipamentos recolhidos', 'collected'],
-  ['equipment_not_found', 'Equipamentos não encontrados', 'missing'],
+  ['attempts', 'Tentativas'],
+  ['collected', 'Equipamentos recolhidos'],
+  ['equipment_not_found', 'Equipamentos não encontrados'],
 ];
+const number = new Intl.NumberFormat('pt-BR');
+const percentage = new Intl.NumberFormat('pt-BR', {style:'percent', maximumFractionDigits:1});
 const counts = () => ({attempts:0, collected:0, equipment_not_found:0});
 
 export function withdrawalMetrics(visits, from = '', to = '') {
@@ -35,14 +37,15 @@ export function withdrawalMetrics(visits, from = '', to = '') {
   return {months:[...months].sort(([a],[b])=>a.localeCompare(b)), people:[...people.values()], totals};
 }
 
-function bars(groups, fields) {
+function columns(groups) {
   if (!groups.length) return '<p class="empty">Nenhum registro no período.</p>';
-  const max = Math.max(1, ...groups.flatMap(([,row])=>fields.map(([key])=>row[key])));
-  return `<ul class="withdrawal-bars">${groups.map(([label,row])=>`
-    <li><strong>${escape(label)}</strong>${fields.map(([key,caption,color])=>`
-      <div class="withdrawal-bar-row"><span>${caption}</span>
-      <meter class="${color}" min="0" max="${max}" value="${row[key]}" aria-label="${caption}"></meter>
-      <b>${row[key]}</b></div>`).join('')}</li>`).join('')}</ul>`;
+  const max = groups.reduce((largest, [, row]) => Math.max(largest, row.collected), 1);
+  return `<div class="withdrawal-chart-scroll"><ul class="withdrawal-columns" aria-label="Equipamentos recolhidos">
+    ${groups.map(([label,{collected}])=>`<li>
+      <div class="withdrawal-column-plot"><strong>${number.format(collected)}</strong>
+        <span class="withdrawal-column" aria-hidden="true" style="--height:${100 * collected / max}%"></span>
+      </div><span class="withdrawal-column-label">${escape(label)}</span>
+    </li>`).join('')}</ul></div>`;
 }
 
 function ranking(people, key) {
@@ -56,20 +59,34 @@ function panel(title, content) {
 
 export function renderWithdrawalOverview(root, visits) {
   const {months, people} = withdrawalMetrics(visits);
-  root.innerHTML = panel('Retiradas concluídas por mês', bars(months.map(([month,row])=>[monthLabel(month),row]), [series[1]]))
-    + panel('Ranking de recolhimentos', bars(ranking(people,'collected'), [series[1]]));
+  root.innerHTML = panel('Retiradas concluídas por mês', columns(months.map(([month,row])=>[monthLabel(month),row])))
+    + panel('Ranking de recolhimentos', columns(ranking(people,'collected')));
 }
 
-export function renderWithdrawalReport(root, visits, from, to) {
+function resultTable(title, label, rows, totals) {
+  const max = rows.reduce((largest, [,row])=>Math.max(largest, row.attempts), 1);
+  const cells = (row, plot) => series.map(([key])=>`<td>${number.format(row[key])}${plot ?
+    `<span class="withdrawal-data-bar" style="--width:${100 * row[key] / max}%" aria-hidden="true"></span>` : ''}</td>`).join('');
+  return panel(title, rows.length ? `<table class="withdrawal-report-table" aria-label="${title}">
+    <thead><tr><th scope="col">${label}</th>${series.map(([,name])=>`<th scope="col">${name}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(([name,row])=>`<tr><th scope="row">${escape(name)}</th>${cells(row,true)}</tr>`).join('')}</tbody>
+    ${totals ? `<tfoot><tr><th scope="row">Total</th>${cells(totals)}</tr></tfoot>` : ''}
+    </table>` : '<p class="empty">Nenhum registro no período.</p>');
+}
+
+export function renderWithdrawalReport(root, visits, from, to, city = '') {
   if (from && to && from > to) {
     root.innerHTML = '<p role="alert">O mês inicial deve vir antes do mês final.</p>';
     return;
   }
   const {months, people, totals} = withdrawalMetrics(visits, from, to);
   const period = [from && 'Desde '+monthLabel(from), to && 'Até '+monthLabel(to)].filter(Boolean).join(' · ');
-  root.innerHTML = `<p class="chart-note">${period || 'Todo o histórico'}</p>
-    <div class="recovery-cards">${series.map(([key,label])=>`<div class="summary-card"><span>${label}</span><strong>${totals[key]}</strong></div>`).join('')}</div>
-    ${panel('Tentativas e resultados por mês',bars(months.map(([month,row])=>[monthLabel(month),row]),series))}
-    ${panel('Ranking de tentativas por responsável',bars(ranking(people,'attempts'),[series[0]]))}
-    <p class="chart-note">Cada visita registrada conta como uma tentativa, agrupada pelo mês do registro no horário de Brasília. Os resultados contam registros de visita. O ranking usa o responsável que registrou a visita.</p>`;
+  const issued = new Intl.DateTimeFormat('pt-BR', {timeZone:'America/Sao_Paulo'}).format(new Date());
+  const rate = totals.attempts ? percentage.format(totals.collected / totals.attempts) : '—';
+  const indicators = [...series.map(([key,label])=>[label,number.format(totals[key])]), ['Taxa de recolhimento',rate]];
+  root.innerHTML = `<p class="withdrawal-report-meta"><strong>${escape(period || 'Todo o histórico')}</strong> · ${escape(city || 'Todas as cidades')} · Emitido em ${issued}</p>
+    <div class="recovery-cards withdrawal-indicators">${indicators.map(([label,value])=>`<div class="summary-card"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div>
+    <p class="chart-note">O mês segue a data do registro no horário de Brasília. Os resultados contam registros de visita. A taxa divide os recolhimentos pelas tentativas. O ranking usa o responsável que registrou a visita.</p>
+    ${resultTable('Tentativas e resultados por mês','Mês',months.map(([month,row])=>[monthLabel(month),row]),totals)}
+    ${resultTable('Ranking de tentativas por responsável','Responsável',ranking(people,'attempts'))}`;
 }

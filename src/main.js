@@ -212,8 +212,16 @@ function renderWithdrawalTab() {
 function drawWithdrawalReport() {
   const from = $('withdrawalFrom').value;
   const to = $('withdrawalTo').value;
+  const cityFilter = $('withdrawalReportCity');
+  const cityById = new Map(withdrawals.map(item=>[item.id, normalizeWithdrawalCity(item.city)]));
+  const cities = [...new Set(cityById.values())].filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const selectedCity = cityFilter.value;
+  cityFilter.replaceChildren(new Option('Todas', ''), ...cities.map(city=>new Option(city, city)));
+  if (cities.includes(selectedCity)) cityFilter.value = selectedCity;
+  const city = cityFilter.value;
+  const visits = city ? withdrawalVisits.filter(visit=>cityById.get(visit.withdrawal_id) === city) : withdrawalVisits;
   $('printWithdrawalReport').disabled = Boolean(from && to && from > to);
-  renderWithdrawalReport($('withdrawalReport'), withdrawalVisits, from, to);
+  renderWithdrawalReport($('withdrawalReport'), visits, from, to, city);
 }
 $('withdrawalSubnav').addEventListener('click', event => {
   const button = event.target.closest('[data-withdrawal-tab]');
@@ -221,7 +229,7 @@ $('withdrawalSubnav').addEventListener('click', event => {
   withdrawalTab = button.dataset.withdrawalTab;
   renderWithdrawalTab();
 });
-for (const id of ['withdrawalFrom','withdrawalTo']) $(id).addEventListener('change', drawWithdrawalReport);
+for (const id of ['withdrawalFrom','withdrawalTo','withdrawalReportCity']) $(id).addEventListener('change', drawWithdrawalReport);
 $('printWithdrawalReport').addEventListener('click', () => {
   if (role === 'admin' && currentView === 'withdrawals' && withdrawalTab === 'report') window.print();
 });

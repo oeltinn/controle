@@ -70,22 +70,44 @@ body[data-user-role="technician"] #withdrawalsView .withdrawal-summary{display:n
 .overview-grid .monthly-grid{grid-template-columns:1fr}
 .withdrawal-metric{margin-bottom:14px}
 .withdrawal-metric h3{margin:0}
-.withdrawal-bars{padding:0 16px;margin:0;list-style:none}
-.withdrawal-bars li{padding:12px 0;border-bottom:1px solid var(--line)}
-.withdrawal-bars li:last-child{border-bottom:0}
-.withdrawal-bar-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(60px,1fr) 3ch;gap:8px;align-items:center;margin-top:6px;font-size:13px}
-.withdrawal-bar-row meter{width:100%;height:16px}
-.withdrawal-bar-row meter::-webkit-meter-optimum-value{background:#4675b8}
-.withdrawal-bar-row meter.collected::-webkit-meter-optimum-value{background:#138777}
-.withdrawal-bar-row meter.missing::-webkit-meter-optimum-value{background:#b65a27}
+.withdrawal-chart-scroll{overflow-x:auto;padding:12px 16px}
+.withdrawal-columns{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(72px,1fr);gap:8px;list-style:none;padding:0;margin:0}
+.withdrawal-columns li{text-align:center;min-width:0}
+.withdrawal-column-plot{height:128px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;border-bottom:1px solid var(--line);font-size:13px}
+.withdrawal-column{width:54%;max-width:44px;height:calc(var(--height) * .78);background:var(--aqua-dark);border-radius:5px 5px 0 0}
+.withdrawal-column-label{display:block;padding-top:6px;font-size:12px;overflow-wrap:anywhere}
+.withdrawal-report-meta{margin:12px 0;color:var(--muted);font-size:13px}
+.withdrawal-indicators{grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
+.withdrawal-report-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}
+.withdrawal-report-table th,.withdrawal-report-table td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right;overflow-wrap:anywhere}
+.withdrawal-report-table th:first-child{text-align:left;width:31%}
+.withdrawal-report-table tfoot th,.withdrawal-report-table tfoot td{font-weight:700;border-bottom:0}
+.withdrawal-data-bar{display:block;margin:4px 0 0 auto;width:var(--width);height:3px;background:var(--aqua-dark);border-radius:2px}
 #withdrawalSubnav[hidden],#withdrawalTools[hidden],#withdrawalDetailOverlay #withdrawalVisitActions[hidden],#withdrawalDetailOverlay #withdrawalVisitActions button[hidden]{display:none}
 @media(max-width:900px){.overview-grid{grid-template-columns:1fr}}
 @media print{
+  @page withdrawal-report{
+    size:A4;margin:16mm 15mm 22mm;
+    @bottom-left{
+      content:"kontroll. · Tudo sob controle. Tudo conectado.";
+      background:url("/kontroll-mark.png") no-repeat left center / 8mm 8mm;
+      padding-left:11mm;font:9pt system-ui;color:#192b2a;
+    }
+    @bottom-right{content:"Página " counter(page) " de " counter(pages);font:9pt system-ui;color:#192b2a}
+  }
   #withdrawalSubnav{display:none!important}
   #withdrawalsView{animation:none}
-  .withdrawal-metric{box-shadow:none;overflow:visible}
-  .withdrawal-metric .panel-head{break-after:avoid}
-  .withdrawal-bars li{break-inside:avoid}
+  #withdrawalReportPane{page:withdrawal-report}
+  #withdrawalReportPane .report-heading{display:block;border-bottom:2px solid var(--aqua-dark);padding-bottom:3mm}
+  #withdrawalReportPane .report-heading h2{margin:0}
+  .withdrawal-indicators{grid-template-columns:repeat(4,minmax(0,1fr));break-inside:avoid;gap:3mm}
+  .withdrawal-indicators .summary-card{padding:3mm;box-shadow:none}
+  #withdrawalReport .withdrawal-metric{box-shadow:none;overflow:visible}
+  #withdrawalReport .withdrawal-metric .panel-head{break-after:avoid}
+  .withdrawal-report-table thead{display:table-header-group}
+  .withdrawal-report-table tfoot{display:table-row-group}
+  .withdrawal-report-table tr{break-inside:avoid}
+  .withdrawal-report-table th,.withdrawal-report-table td{padding:1.6mm 2mm}
 }
 </style>
 </head>
@@ -113,6 +135,7 @@ body[data-user-role="technician"] #withdrawalsView .withdrawal-summary{display:n
   <div class="recovery-filters" role="group" aria-label="Período do relatório">
     <label>Mês inicial<input id="withdrawalFrom" type="month"></label>
     <label>Mês final<input id="withdrawalTo" type="month"></label>
+    <label>Cidade<select id="withdrawalReportCity"><option value="">Todas</option></select></label>
   </div>
   <div id="withdrawalReport"></div>
 </section></section>
