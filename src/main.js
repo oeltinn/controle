@@ -215,7 +215,8 @@ function renderWithdrawals() {
     const status = visit?.result || 'pending';
     const tag = status==='collected'?'collected':status==='pending'?'pending':'missed';
     const author = visit && status!=='pending' ? `<span class="withdrawal-person">${escapeHtml(visit.technician_name)}</span>` : '';
-    return `<button class="withdrawal-card" data-withdrawal="${escapeHtml(item.id)}"><span class="withdrawal-name">${escapeHtml(item.name)}</span><span class="withdrawal-address">${escapeHtml(item.address)}</span><span class="withdrawal-meta">${escapeHtml(item.equipment)}<i class="visit-tag ${tag}">${withdrawalLabels[status]}</i>${author}</span></button>`;
+    const remove = canManageWithdrawals() ? `<button type="button" class="withdrawal-delete" data-delete-withdrawal="${escapeHtml(item.id)}" aria-label="Excluir ${escapeHtml(item.name)}" title="Excluir cliente">×</button>` : '';
+    return `<div class="withdrawal-card-row"><button class="withdrawal-card" data-withdrawal="${escapeHtml(item.id)}"><span class="withdrawal-name">${escapeHtml(item.name)}</span><span class="withdrawal-address">${escapeHtml(item.address)}</span><span class="withdrawal-meta">${escapeHtml(item.equipment)}<i class="visit-tag ${tag}">${withdrawalLabels[status]}</i>${author}</span></button>${remove}</div>`;
   };
   list.innerHTML = groups.map((cities,index) => {
     if (!cities.size) return '';
@@ -447,7 +448,7 @@ document.addEventListener('click', (event) => {
   const visitAction = event.target.closest('[data-visit-result]'); if (visitAction) { openVisitForm(visitAction.dataset.visitResult); return; }
   const open = event.target.closest('[data-open]'); if (open) openDetails(open.dataset.open);
 });
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { const resolving = $('resolveOverlay').classList.contains('open'); document.querySelectorAll('.overlay.open').forEach((overlay) => closeOverlay(overlay.id)); if (resolving) renderClients(); $('adminMenu').hidden = true; } });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !document.getElementById('deleteBatchDialog').open) { const resolving = $('resolveOverlay').classList.contains('open'); document.querySelectorAll('.overlay.open').forEach((overlay) => closeOverlay(overlay.id)); if (resolving) renderClients(); $('adminMenu').hidden = true; } });
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
 $('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
@@ -501,7 +502,7 @@ async function showWithdrawalImports(keepId) {
   const expanded=new Set([...list.querySelectorAll('details[open]')].map(el=>el.dataset.batch));
   const keepItem=withdrawals.find(item=>item.id===keepId);
   if(keepItem) expanded.add(keepItem.import_id || 'manual');
-  const row=item=>`<div class="batch-entry"><span>${escapeHtml(item.name)} · Contrato ${escapeHtml(item.contract_id || '—')}<br><small>${item.include_without_equipment?'Incluído por exceção':'Fora da fila'}</small></span><div class="batch-actions"><button class="secondary" type="button" data-import-action="${item.include_without_equipment?'hide':'allow'}" data-id="${escapeHtml(item.id)}">${item.include_without_equipment?'Retirar da fila':'Incluir na fila'}</button><button class="danger" type="button" data-import-action="delete-item" data-id="${escapeHtml(item.id)}">Excluir</button></div></div>`;
+  const row=item=>`<div class="batch-entry"><span><strong>${escapeHtml(item.name)}</strong><br><small>${escapeHtml(item.address || 'Endereço não informado')}</small><br><small>Contrato ${escapeHtml(item.contract_id || '—')} · ${item.include_without_equipment?'Incluído por exceção':'Fora da fila'}</small></span><div class="batch-actions"><button class="secondary" type="button" data-import-action="${item.include_without_equipment?'hide':'allow'}" data-id="${escapeHtml(item.id)}">${item.include_without_equipment?'Retirar da fila':'Incluir na fila'}</button><button class="danger" type="button" data-import-action="delete-item" data-id="${escapeHtml(item.id)}">Excluir</button></div></div>`;
   try {
     const batches=await listWithdrawalImports();
     const pending=withdrawals.filter(item=>item.equipment==='A identificar');
@@ -510,7 +511,7 @@ async function showWithdrawalImports(keepId) {
       const missing=pending.filter(item=>item.import_id===batch.id);
       const current=withdrawals.filter(item=>item.import_id===batch.id).length;
       const title=`${batch.filename} · ${batch.imported_count} importado(s)`;
-      return block(batch.id,title,`<p>${current} cadastro(s) no lote · ${missing.length} sem ONU identificada</p>${missing.map(row).join('')}<button class="danger" type="button" data-import-action="delete-batch" data-id="${escapeHtml(batch.id)}">Excluir CSV e seus cadastros</button>`);
+      return block(batch.id,title,`<p>${current} cadastro(s) no lote · ${missing.length} sem ONU identificada</p>${missing.map(row).join('')}<button class="danger" type="button" data-import-action="delete-batch" data-id="${escapeHtml(batch.id)}" data-filename="${escapeHtml(batch.filename)}">Excluir CSV e seus cadastros</button>`);
     }).join('');
     const manual=pending.filter(item=>!item.import_id);
     if(manual.length) list.innerHTML+=block('manual','Cadastros manuais sem ONU',manual.map(row).join(''));
@@ -532,18 +533,59 @@ async function removeWithdrawal(id,fromReview=false) {
 }
 
 function bindWithdrawalReview() {
-  $('openImports').addEventListener('click',showWithdrawalImports);
+  $('openImports').addEventListener('click',async()=>{
+    if(!canManageWithdrawals()) return;
+    closeMenu();
+    await refreshWithdrawals();
+    await showWithdrawalImports();
+  });
+  $('withdrawalList').addEventListener('click',event=>{
+    const button=event.target.closest('[data-delete-withdrawal]');
+    if(button) void removeWithdrawal(button.dataset.deleteWithdrawal);
+  });
   $('deleteWithdrawal').addEventListener('click',()=>removeWithdrawal(selectedWithdrawalId));
+  const deleteDialog=$('deleteBatchDialog');
+  const deleteConfirm=$('confirmDeleteBatch');
+  let batchToDelete=null;
+  deleteDialog.addEventListener('close',()=>{ batchToDelete=null; });
+  deleteDialog.addEventListener('cancel',event=>{
+    event.stopPropagation();
+    if(deleteConfirm.disabled) event.preventDefault();
+  });
+  $('cancelDeleteBatch').addEventListener('click',()=>deleteDialog.close());
+  deleteConfirm.addEventListener('click',async()=>{
+    if(!deleteDialog.open || !batchToDelete || !canManageWithdrawals() || deleteConfirm.disabled) return;
+    deleteConfirm.disabled=true;
+    $('cancelDeleteBatch').disabled=true;
+    $('deleteBatchError').textContent='';
+    try {
+      await deleteWithdrawalImport(batchToDelete);
+      deleteDialog.close();
+      await refreshWithdrawals();
+      await showWithdrawalImports();
+      showToast('CSV e cadastros excluídos.');
+    } catch(error) { $('deleteBatchError').textContent=error.message; }
+    finally {
+      deleteConfirm.disabled=false;
+      $('cancelDeleteBatch').disabled=false;
+    }
+  });
   $('withdrawalImportsList').addEventListener('click',async event=>{
     const button=event.target.closest('button[data-import-action]');
     if(!button || !canManageWithdrawals()) return;
     const {importAction,id}=button.dataset;
     if(importAction==='delete-item') return removeWithdrawal(id,true);
-    if(importAction==='delete-batch' && !window.confirm('Excluir todos os clientes deste CSV e o histórico de visitas associado?')) return;
+    if(importAction==='delete-batch') {
+      if(deleteDialog.open) return;
+      batchToDelete=id;
+      $('deleteBatchFilename').textContent=button.dataset.filename;
+      $('deleteBatchError').textContent='';
+      deleteDialog.showModal();
+      return;
+    }
     button.disabled=true;
     try {
-      if(importAction==='delete-batch') await deleteWithdrawalImport(id);
-      else await updateWithdrawal(id,{include_without_equipment:importAction==='allow'});
+      await updateWithdrawal(id,{include_without_equipment:importAction==='allow'});
       await refreshWithdrawals();
       await showWithdrawalImports(id);
     } catch(error) { showToast(error.message); }
@@ -628,5 +670,6 @@ $('csvImportFile').addEventListener('change', async (event) => {
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
   catch (error) { showToast(`Falha na importação CSV: ${error.message}`); } finally { event.target.value = ''; }
 });
+
 
 
