@@ -205,18 +205,12 @@ function renderWithdrawals() {
     if (![item.name,item.contract_id,item.address,item.equipment,item.city,item.district].join(' ').toLocaleLowerCase('pt-BR').includes(term)) continue;
     const visit = latest.get(item.id);
     const city = item.city?.trim() || 'Cidade não informada';
-    const district = item.district?.trim() || 'Bairro não informado';
     const cities = groups[visit && visit.result !== 'pending' ? 1 : 0];
     const cityKey = city.toLocaleUpperCase('pt-BR');
-    const districtKey = district.toLocaleUpperCase('pt-BR');
-    if (!cities.has(cityKey)) cities.set(cityKey,{label:city,districts:new Map(),count:0});
-    const group = cities.get(cityKey);
-    group.count++;
-    if (!group.districts.has(districtKey)) group.districts.set(districtKey,{label:district,items:[]});
-    group.districts.get(districtKey).items.push({item,visit});
+    if (!cities.has(cityKey)) cities.set(cityKey,{label:city,items:[]});
+    cities.get(cityKey).items.push({item,visit});
   }
   const sorted = map => [...map].sort((a,b)=>a[1].label.localeCompare(b[1].label,'pt-BR'));
-  const details = (key,kind,label,content) => `<details class="withdrawal-${kind}" data-group="${escapeHtml(key)}" ${term || open.has(key) ? 'open' : ''}><summary>${escapeHtml(label)}</summary>${content}</details>`;
   const card = ({item,visit}) => {
     const status = visit?.result || 'pending';
     const tag = status==='collected'?'collected':status==='pending'?'pending':'missed';
@@ -227,11 +221,11 @@ function renderWithdrawals() {
     if (!cities.size) return '';
     const heading = index ? 'Com visita registrada' : 'Aguardando visita';
     const sections = sorted(cities).map(([city,group]) => {
-      const districts = sorted(group.districts).map(([district,entry]) => {
-        const cards = '<div class="withdrawal-grid">'+entry.items.map(card).join('')+'</div>';
-        return details(JSON.stringify([index,city,district]),'district',`${entry.label} (${entry.items.length})`,cards);
-      }).join('');
-      return details(JSON.stringify([index,city]),'city',`${group.label} (${group.count})`,districts);
+      const key = JSON.stringify([index,city]);
+      return `<details class="withdrawal-city" data-group="${escapeHtml(key)}" ${term || open.has(key) ? 'open' : ''}>
+        <summary>${escapeHtml(group.label)} (${group.items.length})</summary>
+        <div class="withdrawal-grid">${group.items.map(card).join('')}</div>
+      </details>`;
     }).join('');
     return `<h2 class="section-heading">${heading}</h2>${sections}`;
   }).join('') || '<p class="empty">Nenhuma retirada encontrada.</p>';
