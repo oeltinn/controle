@@ -72,9 +72,11 @@ function headerKey(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleUpperCase('pt-BR').replace(/\s+/g, ' ');
 }
 
-export function parseCsv(text) {
+export function parseCsv(text, { sgpContracts = false } = {}) {
   const input = String(text).replace(/^\uFEFF/, '');
-  const firstLine = input.split(/\r?\n/, 1)[0] || '';
+  const lines = input.split(/\r?\n/);
+  const firstLine = (sgpContracts ? lines.find(line => /CLIENTE\s+ID/.test(headerKey(line)) && /CONTRATO\s+ID/.test(headerKey(line))) : lines[0]) || '';
+  if (sgpContracts && !firstLine) throw new Error('Não encontrei o cabeçalho Cliente ID / Contrato ID do relatório do SGP.');
   const delimiter = [',', ';', '\t'].map((candidate) => ({ candidate, count: firstLine.split(candidate).length - 1 })).sort((a, b) => b.count - a.count)[0].candidate;
   const rows = [];
   let row = [], field = '', quoted = false;
@@ -96,8 +98,10 @@ export function parseCsv(text) {
   row.push(field);
   if (row.some((cell) => cell.trim())) rows.push(row);
   if (rows.length < 2) throw new Error('O CSV precisa ter cabeçalho e ao menos uma linha de dados.');
-  const headers = rows[0].map((header, index) => header.trim() || `COLUNA_VAZIA_${index + 1}`);
-  return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, (values[index] || '').trim()])));
+  const headerRow = sgpContracts ? rows.findIndex(cells => ['CLIENTE ID','CONTRATO ID','CLIENTE','ENDERECO','STATUS'].every(key => cells.some(cell => headerKey(cell) === key))) : 0;
+  if (headerRow < 0) throw new Error('Use o CSV do relatório Contrato → Status do SGP.');
+  const headers = rows[headerRow].map((header, index) => header.trim() || `COLUNA_VAZIA_${index + 1}`);
+  return rows.slice(headerRow + 1).map((values) => Object.fromEntries(headers.map((header, index) => [header, (values[index] || '').trim()])));
 }
 
 function byHeader(row, header) {
@@ -150,26 +154,51 @@ export async function importCsv(records, userId) {
 
 export function normalizeWithdrawalCsv(records, userId) {
   let skipped = 0;
-  const rows = [];
+  const rows = new Map();
   const pick = (row, names) => {
     for (const name of names) { const value = byHeader(row, name); if (value) return value; }
     return '';
   };
   for (const item of records) {
-    const name = pick(item, ['NOME', 'NOME DO CLIENTE', 'CLIENTE']);
-    const address = pick(item, ['ENDEREÇO', 'ENDERECO', 'ENDEREÇO COMPLETO', 'ENDERECO COMPLETO']) ||
-      [pick(item, ['RUA', 'LOGRADOURO']), pick(item, ['BAIRRO']), pick(item, ['CIDADE'])].filter(Boolean).join(', ');
-    const equipment = pick(item, ['EQUIPAMENTO', 'MODELO', 'MODELO DO EQUIPAMENTO', 'ONU']);
-    if (![name, address, equipment].every((value) => value.trim())) { skipped += 1; continue; }
-    const stableKey = `${headerKey(name)}|${headerKey(address)}|${headerKey(equipment)}`;
-    const fingerprint = [...stableKey].reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619), 2166136261).toString(16);
-    rows.push({
-      legacy_id: `csv-retirada-${fingerprint}`,
-      name: name.trim(), phone: pick(item, ['TELEFONE', 'CELULAR', 'CONTATO']).trim() || null,
-      address: address.trim(), equipment: equipment.trim(), created_by: userId,
+    const contract = byHeader(item, 'CONTRATO ID');
+    const name = byHeader(item, 'CLIENTE');
+    const street = byHeader(item, 'ENDEREÇO');
+    if (!/^\d+$/.test(contract) || !name || !street || !/^SUSPENS[OA]$/.test(headerKey(byHeader(item,'STATUS'))) || rows.has(contract)) { skipped += 1; continue; }
+    const address = [[street,byHeader(item,'NÚMERO')].filter(Boolean).join(', '),
+      ...['COMPLEMENTO','PONTO DE REFERENCIA','BAIRRO','CIDADE','UF','CEP'].map(field=>byHeader(item,field))].filter(Boolean).join(' · ');
+    rows.set(contract,{
+      legacy_id: `csv-retirada-sgp-${contract}`, contract_id: contract, name,
+      phone: pick(item, ['TELEFONE', 'CELULAR', 'CONTATO']) || null,
+      address, equipment: 'A identificar', created_by: userId,
     });
   }
-  return { rows, skipped };
+  return { rows: [...rows.values()], skipped };
+}
+
+export async function findContractEquipment(contract) {
+  if (!/^\d+$/.test(contract)) return null;
+  return unwrap(await supabase.from('sgp_contract_equipment').select('equipment').eq('contract_id',contract).maybeSingle())?.equipment ?? null;
+}
+
+export async function importContractEquipment(records) {
+  const catalog = new Map();
+  for (const record of records) {
+    const contractCell = byHeader(record, 'Contrato ID') || byHeader(record, 'ID Contrato') || byHeader(record, 'Contrato');
+    const contract = contractCell.match(/^(\d+)(?:\s+[-–]\s+.+)?$/)?.[1];
+    const equipment = byHeader(record, 'Modelo') || byHeader(record, 'Equipamento') || byHeader(record, 'Modelo ONU');
+    if (!contract || !equipment || /^[-–—]+$/.test(equipment)) continue;
+    if (!catalog.has(contract)) catalog.set(contract, new Set());
+    catalog.get(contract).add(equipment);
+  }
+  if (!catalog.size) throw new Error('O catálogo precisa conter as colunas Contrato ID e Modelo.');
+  const importedAt = new Date().toISOString();
+  const rows = [...catalog].map(([contract_id, models]) => ({
+    contract_id, equipment: [...models].sort().join(' · '), imported_at: importedAt,
+  }));
+  for (let start = 0; start < rows.length; start += 100) {
+    unwrap(await supabase.from('sgp_contract_equipment').upsert(rows.slice(start, start + 100), {onConflict:'contract_id'}));
+  }
+  return rows.length;
 }
 
 export async function listWithdrawals() {
@@ -177,14 +206,14 @@ export async function listWithdrawals() {
 }
 
 export async function createWithdrawal(values, userId) {
-  const row = { legacy_id: values.legacy_id || `retirada-${crypto.randomUUID()}`, name: values.name.trim(), phone: values.phone?.trim() || null, address: values.address.trim(), equipment: values.equipment.trim(), created_by: userId };
+  const row = { legacy_id: `retirada-${crypto.randomUUID()}`, contract_id: values.contract || null, name: values.name.trim(), phone: values.phone?.trim() || null, address: values.address.trim(), equipment: values.equipment.trim() || 'A identificar', created_by: userId };
   return unwrap(await supabase.from('onu_withdrawals').insert(row).select().single());
 }
 
 export async function importWithdrawalsCsv(records, userId) {
   const { rows, skipped } = normalizeWithdrawalCsv(records, userId);
-  if (!rows.length) throw new Error('Nenhuma linha completa encontrada. Informe nome, endereço e equipamento no CSV.');
-  for (let start = 0; start < rows.length; start += 100) unwrap(await supabase.from('onu_withdrawals').upsert(rows.slice(start, start + 100), { onConflict: 'legacy_id' }));
+  if (!rows.length) throw new Error('Nenhum contrato suspenso com ID, cliente e endereço foi encontrado.');
+  for (let start = 0; start < rows.length; start += 100) unwrap(await supabase.from('onu_withdrawals').upsert(rows.slice(start, start + 100), { onConflict: 'contract_id' }));
   return { imported: rows.length, skipped };
 }
 

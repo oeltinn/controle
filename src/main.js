@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
-import { createClientRecord, createWithdrawal, deleteClientRecord, getMyProfile, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
+import { createClientRecord, createWithdrawal, deleteClientRecord, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 let clients = [];
@@ -175,6 +175,7 @@ function setView(view) {
   $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
   $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals' || role === 'technician';
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
+  document.querySelector('label[for=equipmentCsvFile]').hidden = role !== 'admin';
   document.querySelector('label[for=csvImportFile]').hidden = !['admin','operator'].includes(role);
   closeMenu();
   if (view === 'monthly') renderMonthly();
@@ -187,7 +188,7 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
 function latestVisit(withdrawalId) { return withdrawalVisits.find((visit) => visit.withdrawal_id === withdrawalId) || null; }
 function renderWithdrawals() {
   const term = $('withdrawalSearch').value.trim().toLocaleLowerCase('pt-BR');
-  const filtered = withdrawals.filter((item) => `${item.name} ${item.address} ${item.equipment}`.toLocaleLowerCase('pt-BR').includes(term));
+  const filtered = withdrawals.filter((item) => `${item.name} ${item.contract_id ?? ''} ${item.address} ${item.equipment}`.toLocaleLowerCase('pt-BR').includes(term));
   $('withdrawalCount').textContent = withdrawals.length;
   $('summaryWithdrawals').textContent = withdrawals.filter((item) => latestVisit(item.id)?.result !== 'collected').length;
   $('withdrawalVisitsCount').textContent = withdrawalVisits.length;
@@ -228,7 +229,7 @@ function openWithdrawalDetails(id) {
   const visit = latestVisit(id);
   $('withdrawalDetailName').textContent = item.name;
   $('withdrawalDetailFields').innerHTML = [
-    ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
+    ['Contrato SGP', item.contract_id || 'Não informado'], ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
     ['Situação', visit?.result === 'collected' ? 'Equipamento retirado' : visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi'],
     ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
   ].map(([label, value]) => `<div class="field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
@@ -419,7 +420,7 @@ $('withdrawalSearch').addEventListener('input', renderWithdrawals);
 $('withdrawalForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('withdrawalError').textContent = '';
   if (!$('withdrawalForm').reportValidity()) return;
-  try { await createWithdrawal({ name: $('withdrawalName').value, phone: $('withdrawalPhone').value, address: $('withdrawalAddress').value, equipment: $('withdrawalEquipment').value }, sessionUser.id); closeOverlay('withdrawalFormOverlay'); await refreshWithdrawals(); showToast('Cliente adicionado à lista de retirada.'); }
+  try { await createWithdrawal({ contract: $('withdrawalContract').value.trim(), name: $('withdrawalName').value, phone: $('withdrawalPhone').value, address: $('withdrawalAddress').value, equipment: $('withdrawalEquipment').value }, sessionUser.id); closeOverlay('withdrawalFormOverlay'); await refreshWithdrawals(); showToast('Cliente adicionado à lista de retirada.'); }
   catch (error) { $('withdrawalError').textContent = error.message; }
 });
 $('visitSave').addEventListener('click', async () => {
@@ -431,9 +432,47 @@ $('visitSave').addEventListener('click', async () => {
 $('withdrawalCsvFile').addEventListener('change', async (event) => {
   if (!['admin','operator'].includes(role)) return;
   const file = event.target.files?.[0]; if (!file) return;
-  if (!window.confirm(`Importar “${file.name}” para a lista de retirada? É necessário nome, endereço e equipamento.`)) { event.target.value = ''; return; }
-  try { const records = parseCsv(await file.text()); const result = await importWithdrawalsCsv(records, sessionUser.id); await refreshWithdrawals(); showToast(`${result.imported} importados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
+  if (!window.confirm(`Importar os contratos suspensos de “${file.name}” para a lista de retirada?`)) { event.target.value = ''; return; }
+  try {
+    const bytes = await file.arrayBuffer();
+    let content;
+    try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch { content = new TextDecoder('windows-1252').decode(bytes); }
+    const result = await importWithdrawalsCsv(parseCsv(content, {sgpContracts:true}), sessionUser.id);
+    await refreshWithdrawals();
+    showToast(`${result.imported} contrato(s) na fila. ${result.skipped} linha(s) ignorada(s).`);
+  }
   catch (error) { showToast(`Falha ao importar a lista: ${error.message}`); } finally { event.target.value = ''; }
+});
+$('withdrawalContract').addEventListener('change', async (event) => {
+  const field = event.target;
+  const contract = field.value.trim();
+  const hint = $('withdrawalEquipmentHint');
+  hint.textContent = 'Deixe em branco para usar o equipamento vinculado ao contrato.';
+  if (!/^\d+$/.test(contract)) return;
+  try {
+    const equipment = await findContractEquipment(contract);
+    if (field.value.trim() === contract) hint.textContent = equipment ? `Equipamento encontrado no catálogo: ${equipment}` : 'Equipamento ainda não identificado para este contrato.';
+  } catch {
+    if (field.value.trim() === contract) hint.textContent = 'Não foi possível consultar o catálogo agora.';
+  }
+});
+$('equipmentCsvFile').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  if (role !== 'admin' || !file) return;
+  try {
+    const bytes = await file.arrayBuffer();
+    let content;
+    try { content = new TextDecoder('utf-8', {fatal:true}).decode(bytes); }
+    catch { content = new TextDecoder('windows-1252').decode(bytes); }
+    const count = await importContractEquipment(parseCsv(content));
+    await refreshWithdrawals();
+    showToast(`${count} contrato(s) atualizados no catálogo de equipamentos.`);
+  } catch (error) {
+    showToast(`Falha ao importar equipamentos: ${error.message}`);
+  } finally {
+    event.target.value = '';
+  }
 });
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });
 $('clientForm').addEventListener('submit', async (event) => {
