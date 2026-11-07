@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
-import { pulsoRows } from './pulso.js';
+import { renderRecoveryReport } from './recovery-report.js';
+import { initializeClientPhone, readClientPhone } from './client-phone.js';
 import { createClientRecord, createWithdrawal, deleteClientRecord, getMyProfile, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,7 +19,6 @@ let appLoading = false;
 let currentView = 'monthly';
 let recoveryMode = false;
 let authRevision = 0;
-let pulsoWindow = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -50,8 +50,6 @@ function setAuthView(view, message = '') {
 async function showApp(user) {
   if (user?.id === sessionUser?.id && (appLoading || !$('appShell').hidden)) { sessionUser = user; return; }
   if (!user) {
-    pulsoWindow?.close();
-    pulsoWindow = null;
     authRevision++;
     if (sessionUser) sessionStorage.removeItem(`kontroll-welcome:${sessionUser.id}`);
     appLoading = false; document.querySelectorAll('.overlay.open').forEach((el) => closeOverlay(el.id));
@@ -139,6 +137,7 @@ function openDetails(id) {
   const fields = [
     ['Situação', `<span class="status-banner ${state === 'REGULARIZADO' ? 'green' : ''}">${escapeHtml(state)}</span>`],
     ['Data da negativação', escapeHtml(displayDate(negativeDate(client)))],
+    ['Telefone', /^\+[1-9]\d{1,14}$/.test(client.phone ?? '') ? `<a href="tel:${client.phone}">${escapeHtml(client.phone)}</a>` : 'Não informado'],
     ['Data da regularização', escapeHtml(displayDate(regularDate(client)))],
     ['Rua / endereço', escapeHtml(client.street)], ['Bairro', escapeHtml(client.neighborhood)], ['Cidade', escapeHtml(client.city)],
     ...(client.occurrence_id ? [['ID ocorrência', escapeHtml(client.occurrence_id)]] : []),
@@ -176,7 +175,7 @@ function setView(view) {
   $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
   $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals' || role === 'technician';
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
-  $('addBtn').hidden = role === 'attendant';
+  document.querySelector('label[for=csvImportFile]').hidden = !['admin','operator'].includes(role);
   closeMenu();
   if (view === 'monthly') renderMonthly();
   if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
@@ -293,6 +292,7 @@ function pieSvg(data) {
   return `<svg viewBox="0 0 220 220" role="img" aria-label="Gráfico de pizza, total ${total}"><circle cx="110" cy="110" r="72" fill="none" stroke="var(--line)" stroke-width="32"/>${circles}<text x="110" y="106" text-anchor="middle" fill="var(--ink)" font-size="30" font-weight="700">${total}</text><text x="110" y="128" text-anchor="middle" fill="var(--muted)" font-size="11">registros</text></svg><div class="chart-legend">${legend || 'Sem registros'}</div>`;
 }
 function renderReports() {
+  if (['admin','operator'].includes(role)) renderRecoveryReport(clients);
   const negCounts = new Map(); const regCounts = new Map(); const currentSimCounts = new Map();
   clients.forEach((client) => {
     const negKey = monthKey(negativeDate(client));
@@ -323,25 +323,6 @@ $('adminMenuToggle').addEventListener('click', () => {
 });
 $('mobileThemeToggle').addEventListener('click', () => setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
 $('printReport').addEventListener('click', () => window.print());
-$('openPulso').addEventListener('click', () => {
-  if (!['admin','operator'].includes(role)) return;
-  pulsoWindow?.close();
-  pulsoWindow = window.open('/pulso.html', '_blank');
-  if (!pulsoWindow) showToast('Permita a abertura da janela do Pulso.');
-});
-window.addEventListener('message', async (event) => {
-  if (event.origin !== location.origin || !pulsoWindow || event.source !== pulsoWindow || event.data?.type !== 'kontroll-pulso-request') return;
-  const user = sessionUser, target = pulsoWindow;
-  if (!user) return;
-  try {
-    const profile = await getMyProfile(user.id);
-    if (!['admin','operator'].includes(profile.role)) throw new Error('Sem permissão para consultar o Pulso.');
-    const rows = pulsoRows(await listClients());
-    if (sessionUser?.id === user.id && pulsoWindow === target) target.postMessage({type:'kontroll-pulso-data',rows,source:'kontroll. · Supabase',capturedAt:new Date().toISOString(),masked:false},location.origin);
-  } catch (error) {
-    target.postMessage({type:'kontroll-pulso-data',error:error.message},location.origin);
-  }
-});
 document.addEventListener('click', (event) => { if (!event.target.closest('#adminMenuWrap')) closeMenu(); });
 $('mobileProfileButton').addEventListener('click', () => { closeMenu(); $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileEmail').value = sessionUser?.email || ''; $('profileError').textContent = ''; $('passwordChangeForm').reset(); $('passwordChangeError').textContent = ''; });
 $('profileForm').addEventListener('submit', async (event) => {
@@ -432,7 +413,7 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { const resolving = $('resolveOverlay').classList.contains('open'); document.querySelectorAll('.overlay.open').forEach((overlay) => closeOverlay(overlay.id)); if (resolving) renderClients(); $('adminMenu').hidden = true; } });
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
-$('addBtn').addEventListener('click', () => { $('clientForm').reset(); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
+$('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
 $('addWithdrawalBtn').addEventListener('click', () => { if (role === 'technician') return; $('withdrawalForm').reset(); $('withdrawalError').textContent = ''; $('withdrawalFormOverlay').classList.add('open'); $('withdrawalName').focus(); });
 $('withdrawalSearch').addEventListener('input', renderWithdrawals);
 $('withdrawalForm').addEventListener('submit', async (event) => {
@@ -457,7 +438,7 @@ $('withdrawalCsvFile').addEventListener('change', async (event) => {
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });
 $('clientForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('formError').textContent = ''; if (!$('clientForm').reportValidity()) return;
-  try { await createClientRecord({ name: $('clientName').value, contract: $('contract').value, street: $('street').value, neighborhood: $('neighborhood').value, city: $('city').value, onu: $('onu').value, router: $('routerEnabled').checked ? $('routerModel').value : '' }, sessionUser.id); closeOverlay('formOverlay'); await refreshClients(); showToast('Cliente cadastrado como negativado.'); }
+  try { const phone = await readClientPhone(); await createClientRecord({ phone, name: $('clientName').value, contract: $('contract').value, street: $('street').value, neighborhood: $('neighborhood').value, city: $('city').value, onu: $('onu').value, router: $('routerEnabled').checked ? $('routerModel').value : '' }, sessionUser.id); closeOverlay('formOverlay'); await refreshClients(); showToast('Cliente cadastrado como negativado.'); }
   catch (error) { $('formError').textContent = error.message; }
 });
 $('resolveSave').addEventListener('click', async () => {
@@ -476,6 +457,7 @@ $('deleteBtn').addEventListener('click', async () => {
   try { await deleteClientRecord(client.id); closeOverlay('detailOverlay'); await refreshClients(); showToast('Cadastro excluído.'); } catch (error) { showToast(`Não foi possível excluir: ${error.message}`); }
 });
 $('csvImportFile').addEventListener('change', async (event) => {
+  if (!['admin','operator'].includes(role)) { event.target.value = ''; return; }
   const file = event.target.files?.[0]; if (!file) return;
   if (!window.confirm(`Importar os registros do arquivo “${file.name}”? Linhas sem nome, contrato e endereço completo serão ignoradas.`)) { event.target.value = ''; return; }
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }

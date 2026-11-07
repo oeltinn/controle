@@ -41,7 +41,7 @@ export async function createClientRecord(values, userId) {
   const equipment = [values.onu && `ONU: ${values.onu}`, values.router && `Roteador: ${values.router}`].filter(Boolean).join(' · ');
   const today = new Date().toISOString().slice(0, 10);
   const row = {
-    legacy_id: `web-${crypto.randomUUID()}`, name: values.name.trim(), contract: values.contract.trim(),
+    legacy_id: `web-${crypto.randomUUID()}`, name: values.name.trim(), contract: values.contract.trim(), phone: values.phone ?? null,
     street: values.street.trim(), neighborhood: values.neighborhood.trim(), city: values.city.trim(),
     onu: values.onu || null, router: values.router || null, equipment: equipment || null,
     status: 'NEGATIVADO', negativado_status: 'SIM', negative_date: today, negativation_date: today,
