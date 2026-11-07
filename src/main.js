@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
+import { pulsoRows } from './pulso.js';
 import { createClientRecord, createWithdrawal, deleteClientRecord, getMyProfile, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +18,7 @@ let appLoading = false;
 let currentView = 'monthly';
 let recoveryMode = false;
 let authRevision = 0;
+let pulsoWindow = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -39,7 +41,7 @@ function setAuthView(view, message = '') {
   document.body.dataset.auth = 'true';
   $('authShell').hidden = false; $('appShell').hidden = true;
   $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true;
-  $('profileMenuWrap').hidden = true;
+ 
   for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = id !== `${view}Form`;
   const titles = { login: ['Entrar', ''], signup: ['Criar usuário', 'Novos usuários recebem acesso pendente.'], recovery: ['Recuperar senha', 'Enviaremos um link para o e-mail cadastrado.'], newPassword: ['Criar nova senha', 'Escolha uma nova senha para sua conta.'] };
   const [heading, subtitle] = titles[view] || titles.login;
@@ -48,11 +50,13 @@ function setAuthView(view, message = '') {
 async function showApp(user) {
   if (user?.id === sessionUser?.id && (appLoading || !$('appShell').hidden)) { sessionUser = user; return; }
   if (!user) {
+    pulsoWindow?.close();
+    pulsoWindow = null;
     authRevision++;
     if (sessionUser) sessionStorage.removeItem(`kontroll-welcome:${sessionUser.id}`);
     appLoading = false; document.querySelectorAll('.overlay.open').forEach((el) => closeOverlay(el.id));
     sessionUser = null; document.querySelector('.header-nav').hidden = true; $('appShell').hidden = true; $('authShell').hidden = false;
-    $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; $('profileMenuWrap').hidden = true; setAuthView('login'); return;
+    $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true; setAuthView('login'); return;
   }
   const revision = ++authRevision;
   appLoading = true; document.body.dataset.auth = 'false';
@@ -64,10 +68,9 @@ async function showApp(user) {
     myProfile = profile; role = myProfile?.role || 'pending';
   } catch (error) { showToast(`Não foi possível consultar o perfil: ${error.message}`); }
   if (revision !== authRevision) return;
-  appLoading = false; document.body.dataset.role = role;
+  appLoading = false; document.body.dataset.userRole = role;
   $('mobileProfileName').textContent = myProfile?.display_name || 'Minha conta';
   $('adminMenuWrap').hidden = false; $('manageUsersBtn').hidden = role !== 'admin';
-  $('profileMenuWrap').hidden = false; $('profileNameBadge').textContent = myProfile?.display_name || 'Minha conta';
   if (!['admin', 'operator', 'technician', 'attendant'].includes(role)) {
     document.querySelectorAll('[data-view]').forEach((button) => { button.hidden = true; });
     $('appShell').hidden = true; $('authShell').hidden = false;
@@ -77,7 +80,6 @@ async function showApp(user) {
     return;
   }
   document.querySelector('.header-nav').hidden = false; $('deleteBtn').hidden = role !== 'admin'; $('adminMenuWrap').hidden = false;
-  $('profileNameBadge').textContent = myProfile.display_name;
   document.querySelectorAll('[data-view]').forEach((button) => {
     const view = button.dataset.view;
     button.hidden = (view === 'monthly' && ['technician', 'attendant'].includes(role))
@@ -153,11 +155,8 @@ function clearErrors() { for (const id of ['loginError', 'signupError', 'recover
 function setTheme(theme) {
   document.body.dataset.theme = theme; localStorage.setItem('fibra_theme', theme);
   $('mobileThemeToggle').textContent = theme === 'dark' ? '☀ Modo claro' : '☾ Modo noturno';
-  $('themeIcon').textContent = theme === 'dark' ? '☀' : '☾';
-  $('themeToggle').setAttribute('aria-label', theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo noturno');
-  $('themeToggle').title = theme === 'dark' ? 'Ativar modo claro' : 'Ativar modo noturno';
+
 }
-$('themeToggle').addEventListener('click', () => setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
 setTheme(localStorage.getItem('fibra_theme') || 'light');
 
 function setView(view) {
@@ -175,7 +174,9 @@ function setView(view) {
   $('negSubnav').hidden = !['clients','reports'].includes(view);
   const heading = { monthly:['Visão geral','Resultados da operação em um só lugar.'], clients:['Negativações','Pesquise cadastros e acompanhe cada situação.'], reports:['Negativações','Relatórios e indicadores dos clientes.'], withdrawals:['Retirada de ONU','Organize os contatos e as visitas dos técnicos.'] }[view];
   $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
-  $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals';
+  $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals' || role === 'technician';
+  document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
+  $('addBtn').hidden = role === 'attendant';
   closeMenu();
   if (view === 'monthly') renderMonthly();
   if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
@@ -320,14 +321,33 @@ function renderReports() {
 $('adminMenuToggle').addEventListener('click', () => {
   const menu = $('adminMenu'); menu.hidden = !menu.hidden; $('adminMenuToggle').setAttribute('aria-expanded', String(!menu.hidden));
 });
-$('mobileThemeToggle').addEventListener('click', () => $('themeToggle').click());
-$('mobileProfileButton').addEventListener('click', () => { closeMenu(); $('profileMenuToggle').click(); });
+$('mobileThemeToggle').addEventListener('click', () => setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
+$('printReport').addEventListener('click', () => window.print());
+$('openPulso').addEventListener('click', () => {
+  if (!['admin','operator'].includes(role)) return;
+  pulsoWindow?.close();
+  pulsoWindow = window.open('/pulso.html', '_blank');
+  if (!pulsoWindow) showToast('Permita a abertura da janela do Pulso.');
+});
+window.addEventListener('message', async (event) => {
+  if (event.origin !== location.origin || !pulsoWindow || event.source !== pulsoWindow || event.data?.type !== 'kontroll-pulso-request') return;
+  const user = sessionUser, target = pulsoWindow;
+  if (!user) return;
+  try {
+    const profile = await getMyProfile(user.id);
+    if (!['admin','operator'].includes(profile.role)) throw new Error('Sem permissão para consultar o Pulso.');
+    const rows = pulsoRows(await listClients());
+    if (sessionUser?.id === user.id && pulsoWindow === target) target.postMessage({type:'kontroll-pulso-data',rows,source:'kontroll. · Supabase',capturedAt:new Date().toISOString(),masked:false},location.origin);
+  } catch (error) {
+    target.postMessage({type:'kontroll-pulso-data',error:error.message},location.origin);
+  }
+});
 document.addEventListener('click', (event) => { if (!event.target.closest('#adminMenuWrap')) closeMenu(); });
-$('profileMenuToggle').addEventListener('click', () => { $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileEmail').value = sessionUser?.email || ''; $('profileError').textContent = ''; $('passwordChangeForm').reset(); $('passwordChangeError').textContent = ''; });
+$('mobileProfileButton').addEventListener('click', () => { closeMenu(); $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileEmail').value = sessionUser?.email || ''; $('profileError').textContent = ''; $('passwordChangeForm').reset(); $('passwordChangeError').textContent = ''; });
 $('profileForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('profileError').textContent = '';
   const displayName = $('profileName').value.trim(); if (!displayName) { $('profileError').textContent = 'O nome é obrigatório.'; return; }
-  try { myProfile = await updateMyProfile(sessionUser.id, { display_name: displayName, phone: $('profilePhone').value }); $('profileNameBadge').textContent = myProfile.display_name; $('mobileProfileName').textContent = myProfile.display_name; closeOverlay('profileOverlay'); showToast('Dados da conta atualizados.'); }
+  try { myProfile = await updateMyProfile(sessionUser.id, { display_name: displayName, phone: $('profilePhone').value }); $('mobileProfileName').textContent = myProfile.display_name; closeOverlay('profileOverlay'); showToast('Dados da conta atualizados.'); }
   catch (error) { $('profileError').textContent = `Não foi possível salvar: ${error.message}`; }
 });
 $('passwordChangeForm').addEventListener('submit', async (event) => {
@@ -349,7 +369,7 @@ function renderProfiles() {
   $('usersList').innerHTML = profiles.map((profile) => `<div class="user-row"><div><div class="user-email">${escapeHtml(profile.display_name || 'Sem nome')}</div><div class="user-created">${escapeHtml(profile.email || 'Conta sem e-mail')}${profile.phone ? ` · ${escapeHtml(profile.phone)}` : ''}</div></div><select data-role="${escapeHtml(profile.id)}" aria-label="Permissão de ${escapeHtml(profile.email)}"><option value="pending" ${profile.role === 'pending' ? 'selected' : ''}>Pendente</option><option value="technician" ${profile.role === 'technician' ? 'selected' : ''}>Técnico</option><option value="attendant" ${profile.role === 'attendant' ? 'selected' : ''}>Atendente</option><option value="operator" ${profile.role === 'operator' ? 'selected' : ''}>Operador</option><option value="admin" ${profile.role === 'admin' ? 'selected' : ''}>Administrador</option></select></div>`).join('') || '<div class="empty">Nenhum usuário encontrado.</div>';
 }
 document.addEventListener('change', async (event) => {
-  const roleSelect = event.target.closest('[data-role]');
+  const roleSelect = event.target.closest('select[data-role]');
   if (roleSelect) {
     try { const updated = await updateProfileRole(roleSelect.dataset.role, roleSelect.value); profiles = profiles.map((profile) => profile.id === updated.id ? { ...profile, role: updated.role } : profile); showToast('Permissão atualizada.'); }
     catch (error) { showToast(`Não foi possível alterar a permissão: ${error.message}`); renderProfiles(); }
@@ -413,7 +433,7 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { 
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
 $('addBtn').addEventListener('click', () => { $('clientForm').reset(); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
-$('addWithdrawalBtn').addEventListener('click', () => { $('withdrawalForm').reset(); $('withdrawalError').textContent = ''; $('withdrawalFormOverlay').classList.add('open'); $('withdrawalName').focus(); });
+$('addWithdrawalBtn').addEventListener('click', () => { if (role === 'technician') return; $('withdrawalForm').reset(); $('withdrawalError').textContent = ''; $('withdrawalFormOverlay').classList.add('open'); $('withdrawalName').focus(); });
 $('withdrawalSearch').addEventListener('input', renderWithdrawals);
 $('withdrawalForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('withdrawalError').textContent = '';
@@ -428,6 +448,7 @@ $('visitSave').addEventListener('click', async () => {
   catch (error) { $('visitError').textContent = `Não foi possível registrar: ${error.message}`; }
 });
 $('withdrawalCsvFile').addEventListener('change', async (event) => {
+  if (!['admin','operator'].includes(role)) return;
   const file = event.target.files?.[0]; if (!file) return;
   if (!window.confirm(`Importar “${file.name}” para a lista de retirada? É necessário nome, endereço e equipamento.`)) { event.target.value = ''; return; }
   try { const records = parseCsv(await file.text()); const result = await importWithdrawalsCsv(records, sessionUser.id); await refreshWithdrawals(); showToast(`${result.imported} importados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }

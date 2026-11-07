@@ -178,7 +178,7 @@ export async function listWithdrawals() {
 
 export async function createWithdrawal(values, userId) {
   const row = { legacy_id: values.legacy_id || `retirada-${crypto.randomUUID()}`, name: values.name.trim(), phone: values.phone?.trim() || null, address: values.address.trim(), equipment: values.equipment.trim(), created_by: userId };
-  return unwrap(await supabase.from('onu_withdrawals').upsert(row, { onConflict: 'legacy_id' }).select().single());
+  return unwrap(await supabase.from('onu_withdrawals').insert(row).select().single());
 }
 
 export async function importWithdrawalsCsv(records, userId) {
