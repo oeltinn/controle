@@ -1,7 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
-import { createClientRecord, createWithdrawal, deleteClientRecord, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole } from './data.js';
+import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 let clients = [];
@@ -14,7 +14,10 @@ let withdrawals = [];
 let withdrawalVisits = [];
 let myProfile = null;
 let selectedWithdrawalId = null;
-let withdrawalVisitResult = 'pending';
+let withdrawalVisitResult = null;
+const canManageWithdrawals = () => ['admin','operator'].includes(role);
+const withdrawalVisible = item => item.equipment !== 'A identificar' || item.include_without_equipment;
+const withdrawalLabels = {collected:'Equipamento recolhido',equipment_not_found:'Equipamento não encontrado',no_answer:'Não encontrou ninguém',visited:'Visita realizada',pending:'Sem visita'};
 let appLoading = false;
 let currentView = 'monthly';
 let recoveryMode = false;
@@ -175,7 +178,8 @@ function setView(view) {
   $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
   $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals' || role === 'technician';
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
-  document.querySelector('label[for=equipmentCsvFile]').hidden = role !== 'admin';
+  $('openCatalog').hidden = role !== 'admin';
+  $('openImports').hidden = !canManageWithdrawals();
   document.querySelector('label[for=csvImportFile]').hidden = !['admin','operator'].includes(role);
   closeMenu();
   if (view === 'monthly') renderMonthly();
@@ -187,18 +191,52 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
 
 function latestVisit(withdrawalId) { return withdrawalVisits.find((visit) => visit.withdrawal_id === withdrawalId) || null; }
 function renderWithdrawals() {
+  const list = $('withdrawalList');
   const term = $('withdrawalSearch').value.trim().toLocaleLowerCase('pt-BR');
-  const filtered = withdrawals.filter((item) => `${item.name} ${item.contract_id ?? ''} ${item.address} ${item.equipment}`.toLocaleLowerCase('pt-BR').includes(term));
-  $('withdrawalCount').textContent = withdrawals.length;
-  $('summaryWithdrawals').textContent = withdrawals.filter((item) => latestVisit(item.id)?.result !== 'collected').length;
+  const open = new Set([...list.querySelectorAll('details[open]')].map(el=>el.dataset.group));
+  const latest = new Map();
+  for (const visit of withdrawalVisits) if (!latest.has(visit.withdrawal_id)) latest.set(visit.withdrawal_id, visit);
+  const visible = withdrawals.filter(withdrawalVisible);
+  $('withdrawalCount').textContent = visible.length;
+  $('summaryWithdrawals').textContent = visible.filter(item => !latest.has(item.id) || latest.get(item.id).result === 'pending').length;
   $('withdrawalVisitsCount').textContent = withdrawalVisits.length;
-  $('withdrawalList').innerHTML = filtered.length ? filtered.map((item) => {
-    const visit = latestVisit(item.id);
-    const label = visit?.result === 'collected' ? 'Equipamento retirado' : visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi';
-    const tag = visit?.result === 'collected' ? 'collected' : visit?.result === 'no_answer' ? 'missed' : visit?.result === 'visited' ? 'visited' : 'pending';
-    return `<button class="withdrawal-card" data-withdrawal="${escapeHtml(item.id)}"><span class="withdrawal-name">${escapeHtml(item.name)}</span><span class="withdrawal-address">${escapeHtml(item.address)}</span><span class="withdrawal-meta">${escapeHtml(item.equipment)}<i class="visit-tag ${tag}">${label}</i></span></button>`;
-  }).join('') : `<div class="empty">${term ? 'Nenhum cliente encontrado.' : 'Ainda não há clientes na lista de retirada.'}</div>`;
+  const groups = [new Map(),new Map()];
+  for (const item of visible) {
+    if (![item.name,item.contract_id,item.address,item.equipment,item.city,item.district].join(' ').toLocaleLowerCase('pt-BR').includes(term)) continue;
+    const visit = latest.get(item.id);
+    const city = item.city?.trim() || 'Cidade não informada';
+    const district = item.district?.trim() || 'Bairro não informado';
+    const cities = groups[visit && visit.result !== 'pending' ? 1 : 0];
+    const cityKey = city.toLocaleUpperCase('pt-BR');
+    const districtKey = district.toLocaleUpperCase('pt-BR');
+    if (!cities.has(cityKey)) cities.set(cityKey,{label:city,districts:new Map(),count:0});
+    const group = cities.get(cityKey);
+    group.count++;
+    if (!group.districts.has(districtKey)) group.districts.set(districtKey,{label:district,items:[]});
+    group.districts.get(districtKey).items.push({item,visit});
+  }
+  const sorted = map => [...map].sort((a,b)=>a[1].label.localeCompare(b[1].label,'pt-BR'));
+  const details = (key,kind,label,content) => `<details class="withdrawal-${kind}" data-group="${escapeHtml(key)}" ${term || open.has(key) ? 'open' : ''}><summary>${escapeHtml(label)}</summary>${content}</details>`;
+  const card = ({item,visit}) => {
+    const status = visit?.result || 'pending';
+    const tag = status==='collected'?'collected':status==='pending'?'pending':'missed';
+    const author = visit && status!=='pending' ? `<span class="withdrawal-person">${escapeHtml(visit.technician_name)}</span>` : '';
+    return `<button class="withdrawal-card" data-withdrawal="${escapeHtml(item.id)}"><span class="withdrawal-name">${escapeHtml(item.name)}</span><span class="withdrawal-address">${escapeHtml(item.address)}</span><span class="withdrawal-meta">${escapeHtml(item.equipment)}<i class="visit-tag ${tag}">${withdrawalLabels[status]}</i>${author}</span></button>`;
+  };
+  list.innerHTML = groups.map((cities,index) => {
+    if (!cities.size) return '';
+    const heading = index ? 'Com visita registrada' : 'Aguardando visita';
+    const sections = sorted(cities).map(([city,group]) => {
+      const districts = sorted(group.districts).map(([district,entry]) => {
+        const cards = '<div class="withdrawal-grid">'+entry.items.map(card).join('')+'</div>';
+        return details(JSON.stringify([index,city,district]),'district',`${entry.label} (${entry.items.length})`,cards);
+      }).join('');
+      return details(JSON.stringify([index,city]),'city',`${group.label} (${group.count})`,districts);
+    }).join('');
+    return `<h2 class="section-heading">${heading}</h2>${sections}`;
+  }).join('') || '<p class="empty">Nenhuma retirada encontrada.</p>';
 }
+
 function renderNoAnswerVisits() {
   const latest = withdrawals.map((item) => latestVisit(item.id)).filter(Boolean);
   const collected = latest.filter((visit) => visit.result === 'collected');
@@ -230,19 +268,23 @@ function openWithdrawalDetails(id) {
   $('withdrawalDetailName').textContent = item.name;
   $('withdrawalDetailFields').innerHTML = [
     ['Contrato SGP', item.contract_id || 'Não informado'], ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
-    ['Situação', visit?.result === 'collected' ? 'Equipamento retirado' : visit?.result === 'no_answer' ? 'Não encontrou ninguém' : visit?.result === 'visited' ? 'Visita realizada' : 'Ainda não foi'],
+    ['Situação', withdrawalLabels[visit?.result || 'pending']],
     ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
   ].map(([label, value]) => `<div class="field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
+  $('withdrawalVisitActions').hidden = role === 'attendant' || !withdrawalVisible(item);
+  const earlier = withdrawalVisits.filter(entry=>entry.withdrawal_id === id && entry !== visit && entry.result !== 'pending');
+  $('withdrawalHistory').innerHTML = earlier.length ? '<details><summary>Visitas anteriores</summary><ul>' + earlier.map(entry=>`<li><strong>${escapeHtml(entry.technician_name)} · ${escapeHtml(withdrawalLabels[entry.result])}</strong> · ${escapeHtml(displayDate(String(entry.created_at).slice(0,10)))}<p>${escapeHtml(entry.observation)}</p></li>`).join('')+'</ul></details>' : '';
+  $('deleteWithdrawal').hidden = !canManageWithdrawals();
   $('withdrawalDetailOverlay').classList.add('open');
 }
 function openVisitForm(result) {
+  if (role === 'attendant' || !['collected','equipment_not_found'].includes(result)) return;
   withdrawalVisitResult = result;
-  const labels = { collected: 'Confirmar equipamento retirado', pending: 'Marcar como ainda não foi', visited: 'Registrar visita realizada', no_answer: 'Registrar que não encontrou ninguém' };
-  $('visitTitle').textContent = labels[result];
+  $('visitTitle').textContent = withdrawalLabels[result];
   $('visitObservation').value = '';
-  $('visitObservation').required = result !== 'pending';
-  $('visitObservationLabel').textContent = result === 'pending' ? 'Observação (opcional)' : 'O que aconteceu? *';
-  $('visitObservation').placeholder = result === 'no_answer' ? 'Ex.: Ninguém atendeu; vizinho informou horário...' : 'Descreva brevemente o resultado da visita...';
+  $('visitObservation').required = true;
+  $('visitObservationLabel').textContent = 'O que aconteceu? *';
+  $('visitObservation').placeholder = 'Descreva brevemente o resultado da visita.';
   $('visitError').textContent = '';
   $('visitOverlay').classList.add('open');
 }
@@ -420,13 +462,14 @@ $('withdrawalSearch').addEventListener('input', renderWithdrawals);
 $('withdrawalForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('withdrawalError').textContent = '';
   if (!$('withdrawalForm').reportValidity()) return;
-  try { await createWithdrawal({ contract: $('withdrawalContract').value.trim(), name: $('withdrawalName').value, phone: $('withdrawalPhone').value, address: $('withdrawalAddress').value, equipment: $('withdrawalEquipment').value }, sessionUser.id); closeOverlay('withdrawalFormOverlay'); await refreshWithdrawals(); showToast('Cliente adicionado à lista de retirada.'); }
+  try { await createWithdrawal({ contract: $('withdrawalContract').value.trim(), name: $('withdrawalName').value, phone: $('withdrawalPhone').value, address: $('withdrawalAddress').value, city: $('withdrawalCity').value, district: $('withdrawalDistrict').value, equipment: $('withdrawalEquipment').value }, sessionUser.id); closeOverlay('withdrawalFormOverlay'); await refreshWithdrawals(); showToast('Cliente adicionado à lista de retirada.'); }
   catch (error) { $('withdrawalError').textContent = error.message; }
 });
 $('visitSave').addEventListener('click', async () => {
   const observation = $('visitObservation').value.trim();
-  if (withdrawalVisitResult !== 'pending' && !observation) { $('visitError').textContent = 'Descreva o resultado da visita.'; $('visitObservation').focus(); return; }
-  try { await recordWithdrawalVisit(selectedWithdrawalId, withdrawalVisitResult, observation); closeOverlay('visitOverlay'); closeOverlay('withdrawalDetailOverlay'); await refreshWithdrawals(); showToast(withdrawalVisitResult === 'no_answer' ? 'Visita registrada e resumo atualizado.' : 'Acompanhamento atualizado.'); }
+  if (!['collected','equipment_not_found'].includes(withdrawalVisitResult) || role === 'attendant') return;
+  if (!observation) { $('visitError').textContent = 'Descreva o resultado da visita.'; $('visitObservation').focus(); return; }
+  try { await recordWithdrawalVisit(selectedWithdrawalId, withdrawalVisitResult, observation); closeOverlay('visitOverlay'); closeOverlay('withdrawalDetailOverlay'); await refreshWithdrawals(); showToast('Resultado da visita registrado.'); }
   catch (error) { $('visitError').textContent = `Não foi possível registrar: ${error.message}`; }
 });
 $('withdrawalCsvFile').addEventListener('change', async (event) => {
@@ -438,9 +481,10 @@ $('withdrawalCsvFile').addEventListener('change', async (event) => {
     let content;
     try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
     catch { content = new TextDecoder('windows-1252').decode(bytes); }
-    const result = await importWithdrawalsCsv(parseCsv(content, {sgpContracts:true}), sessionUser.id);
+    const result = await importWithdrawalsCsv(parseCsv(content, {sgpContracts:true}), file.name);
     await refreshWithdrawals();
-    showToast(`${result.imported} contrato(s) na fila. ${result.skipped} linha(s) ignorada(s).`);
+    if (result.imported) await showWithdrawalImports();
+    showToast(`${result.imported} importado(s), ${result.duplicates} já existente(s), ${result.skipped} linha(s) ignorada(s).`);
   }
   catch (error) { showToast(`Falha ao importar a lista: ${error.message}`); } finally { event.target.value = ''; }
 });
@@ -457,23 +501,111 @@ $('withdrawalContract').addEventListener('change', async (event) => {
     if (field.value.trim() === contract) hint.textContent = 'Não foi possível consultar o catálogo agora.';
   }
 });
-$('equipmentCsvFile').addEventListener('change', async (event) => {
-  const file = event.target.files?.[0];
-  if (role !== 'admin' || !file) return;
+async function showWithdrawalImports(keepId) {
+  if(!canManageWithdrawals()) return;
+  const list=$('withdrawalImportsList');
+  const expanded=new Set([...list.querySelectorAll('details[open]')].map(el=>el.dataset.batch));
+  const keepItem=withdrawals.find(item=>item.id===keepId);
+  if(keepItem) expanded.add(keepItem.import_id || 'manual');
+  const row=item=>`<div class="batch-entry"><span>${escapeHtml(item.name)} · Contrato ${escapeHtml(item.contract_id || '—')}<br><small>${item.include_without_equipment?'Incluído por exceção':'Fora da fila'}</small></span><div class="batch-actions"><button class="secondary" type="button" data-import-action="${item.include_without_equipment?'hide':'allow'}" data-id="${escapeHtml(item.id)}">${item.include_without_equipment?'Retirar da fila':'Incluir na fila'}</button><button class="danger" type="button" data-import-action="delete-item" data-id="${escapeHtml(item.id)}">Excluir</button></div></div>`;
   try {
-    const bytes = await file.arrayBuffer();
-    let content;
-    try { content = new TextDecoder('utf-8', {fatal:true}).decode(bytes); }
-    catch { content = new TextDecoder('windows-1252').decode(bytes); }
-    const count = await importContractEquipment(parseCsv(content));
+    const batches=await listWithdrawalImports();
+    const pending=withdrawals.filter(item=>item.equipment==='A identificar');
+    const block=(id,title,body)=>`<details class="withdrawal-batch" data-batch="${escapeHtml(id)}" ${expanded.has(id)?'open':''}><summary>${escapeHtml(title)}</summary>${body}</details>`;
+    list.innerHTML=batches.map(batch=>{
+      const missing=pending.filter(item=>item.import_id===batch.id);
+      const current=withdrawals.filter(item=>item.import_id===batch.id).length;
+      const title=`${batch.filename} · ${batch.imported_count} importado(s)`;
+      return block(batch.id,title,`<p>${current} cadastro(s) no lote · ${missing.length} sem ONU identificada</p>${missing.map(row).join('')}<button class="danger" type="button" data-import-action="delete-batch" data-id="${escapeHtml(batch.id)}">Excluir CSV e seus cadastros</button>`);
+    }).join('');
+    const manual=pending.filter(item=>!item.import_id);
+    if(manual.length) list.innerHTML+=block('manual','Cadastros manuais sem ONU',manual.map(row).join(''));
+    if(!list.innerHTML) list.innerHTML='<p>Nenhum CSV importado.</p>';
+    $('withdrawalImportsOverlay').classList.add('open');
+  } catch(error) { showToast(`Não foi possível carregar os CSVs: ${error.message}`); }
+}
+
+async function removeWithdrawal(id,fromReview=false) {
+  if(!id || !canManageWithdrawals()) return;
+  if(!window.confirm('Excluir este cliente da fila e apagar o histórico de visitas dele?')) return;
+  try {
+    await deleteWithdrawal(id);
+    closeOverlay('withdrawalDetailOverlay');
     await refreshWithdrawals();
-    showToast(`${count} contrato(s) atualizados no catálogo de equipamentos.`);
-  } catch (error) {
-    showToast(`Falha ao importar equipamentos: ${error.message}`);
-  } finally {
-    event.target.value = '';
-  }
-});
+    if(fromReview) await showWithdrawalImports();
+    showToast('Cliente excluído da fila.');
+  } catch(error) { showToast(error.message); }
+}
+
+function bindWithdrawalReview() {
+  $('openImports').addEventListener('click',showWithdrawalImports);
+  $('deleteWithdrawal').addEventListener('click',()=>removeWithdrawal(selectedWithdrawalId));
+  $('withdrawalImportsList').addEventListener('click',async event=>{
+    const button=event.target.closest('button[data-import-action]');
+    if(!button || !canManageWithdrawals()) return;
+    const {importAction,id}=button.dataset;
+    if(importAction==='delete-item') return removeWithdrawal(id,true);
+    if(importAction==='delete-batch' && !window.confirm('Excluir todos os clientes deste CSV e o histórico de visitas associado?')) return;
+    button.disabled=true;
+    try {
+      if(importAction==='delete-batch') await deleteWithdrawalImport(id);
+      else await updateWithdrawal(id,{include_without_equipment:importAction==='allow'});
+      await refreshWithdrawals();
+      await showWithdrawalImports(id);
+    } catch(error) { showToast(error.message); }
+    finally { button.disabled=false; }
+  });
+  let catalogFile=null;
+  const drop=$('catalogDrop');
+  const confirm=$('confirmCatalog');
+  const choose=file=>{
+    catalogFile=file && /\.csv$/i.test(file.name) ? file : null;
+    $('catalogSelection').textContent=catalogFile?.name || '';
+    $('catalogError').textContent=file && !catalogFile ? 'Selecione um arquivo CSV.' : '';
+    confirm.disabled=!catalogFile;
+  };
+  $('openCatalog').addEventListener('click',()=>{
+    if(role!=='admin') return;
+    $('equipmentCsvFile').value='';
+    choose(null);
+    $('catalogOverlay').classList.add('open');
+  });
+  $('equipmentCsvFile').addEventListener('change',event=>choose(event.target.files?.[0]));
+  drop.addEventListener('dragover',event=>{event.preventDefault();drop.classList.add('is-dragover');});
+  drop.addEventListener('dragleave',()=>drop.classList.remove('is-dragover'));
+  drop.addEventListener('drop',event=>{
+    event.preventDefault();
+    drop.classList.remove('is-dragover');
+    if(!confirm.dataset.busy) choose(event.dataTransfer.files?.[0]);
+  });
+  confirm.addEventListener('click',async()=>{
+    if(role!=='admin' || !catalogFile || confirm.dataset.busy) return;
+    const file=catalogFile;
+    confirm.dataset.busy='true';
+    confirm.disabled=true;
+    $('equipmentCsvFile').disabled=true;
+    $('catalogError').textContent='';
+    try {
+      const bytes=await file.arrayBuffer();
+      let content;
+      try {content=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
+      catch {content=new TextDecoder('windows-1252').decode(bytes);}
+      const count=await importContractEquipment(parseCsv(content,{equipmentCatalog:true}));
+      closeOverlay('catalogOverlay');
+      choose(null);
+      await refreshWithdrawals();
+      showToast(`${count} contrato(s) atualizados no catálogo.`);
+    } catch(error) { $('catalogError').textContent=error.message; }
+    finally {
+      delete confirm.dataset.busy;
+      $('equipmentCsvFile').disabled=false;
+      confirm.disabled=!catalogFile;
+    }
+  });
+}
+bindWithdrawalReview();
+
+
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });
 $('clientForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('formError').textContent = ''; if (!$('clientForm').reportValidity()) return;
