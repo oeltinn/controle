@@ -1,3 +1,4 @@
+import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-report.js';
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
@@ -21,6 +22,7 @@ const withdrawalVisible = item => item.equipment !== 'A identificar' || item.inc
 const withdrawalLabels = {collected:'Equipamento recolhido',equipment_not_found:'Equipamento não encontrado',no_answer:'Não encontrou ninguém',visited:'Visita realizada',pending:'Sem visita'};
 let appLoading = false;
 let currentView = 'monthly';
+let withdrawalTab = 'list';
 let recoveryMode = false;
 let authRevision = 0;
 
@@ -177,7 +179,8 @@ function setView(view) {
   $('negSubnav').hidden = !['clients','reports'].includes(view);
   const heading = { monthly:['Visão geral','Resultados da operação em um só lugar.'], clients:['Negativações','Pesquise cadastros e acompanhe cada situação.'], reports:['Negativações','Relatórios e indicadores dos clientes.'], withdrawals:['Retirada de ONU','Organize os contatos e as visitas dos técnicos.'] }[view];
   $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
-  $('clientTools').hidden = view !== 'clients'; $('withdrawalTools').hidden = view !== 'withdrawals' || role === 'technician';
+  $('clientTools').hidden = view !== 'clients';
+  renderWithdrawalTab();
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
   $('openCatalog').hidden = role !== 'admin';
   $('openImports').hidden = !canManageWithdrawals();
@@ -189,6 +192,39 @@ function setView(view) {
 function closeMenu() { $('adminMenu').hidden=true; $('adminMenuToggle').setAttribute('aria-expanded','false'); }
 
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
+
+function renderWithdrawalTab() {
+  const active = currentView === 'withdrawals';
+  if (role !== 'admin') withdrawalTab = 'list';
+  const report = withdrawalTab === 'report';
+  $('withdrawalSubnav').hidden = !active || role !== 'admin';
+  $('withdrawalListPane').hidden = report;
+  $('withdrawalReportPane').hidden = !report;
+  $('withdrawalTools').hidden = !active || report || role === 'technician';
+  for (const button of $('withdrawalSubnav').querySelectorAll('button')) {
+    const selected = button.dataset.withdrawalTab === withdrawalTab;
+    button.classList.toggle('active', selected);
+    if (selected) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  if (active && report) drawWithdrawalReport();
+}
+function drawWithdrawalReport() {
+  const from = $('withdrawalFrom').value;
+  const to = $('withdrawalTo').value;
+  $('printWithdrawalReport').disabled = Boolean(from && to && from > to);
+  renderWithdrawalReport($('withdrawalReport'), withdrawalVisits, from, to);
+}
+$('withdrawalSubnav').addEventListener('click', event => {
+  const button = event.target.closest('[data-withdrawal-tab]');
+  if (!button || role !== 'admin') return;
+  withdrawalTab = button.dataset.withdrawalTab;
+  renderWithdrawalTab();
+});
+for (const id of ['withdrawalFrom','withdrawalTo']) $(id).addEventListener('change', drawWithdrawalReport);
+$('printWithdrawalReport').addEventListener('click', () => {
+  if (role === 'admin' && currentView === 'withdrawals' && withdrawalTab === 'report') window.print();
+});
 
 function latestVisit(withdrawalId) { return withdrawalVisits.find((visit) => visit.withdrawal_id === withdrawalId) || null; }
 function renderWithdrawals() {
@@ -237,14 +273,8 @@ function renderNoAnswerVisits() {
   const latest = withdrawals.map((item) => latestVisit(item.id)).filter(Boolean);
   const collected = latest.filter((visit) => visit.result === 'collected');
   $('summaryCollected').textContent = collected.length;
-  const technicians = new Map();
-  for (const visit of collected) {
-    const key = visit.technician_id;
-    const item = technicians.get(key) || { name: visit.technician_name, count: 0 };
-    item.count++; technicians.set(key,item);
-  }
-  $('technicianStats').innerHTML = [...technicians.values()].sort((a,b)=>b.count-a.count).map((item)=>`<div class="technician-row"><span>${escapeHtml(item.name)}</span><strong>${item.count} retirada(s)</strong></div>`).join('') || '<div class="empty">Nenhuma retirada confirmada ainda.</div>';
-  $('summaryNoAnswers').textContent = latest.filter((visit) => visit.result === 'no_answer').length;
+  if (['admin','operator'].includes(role)) renderWithdrawalOverview($('withdrawalOverview'), withdrawalVisits);
+  if (role === 'admin' && withdrawalTab === 'report') drawWithdrawalReport();
   const missed = withdrawalVisits.filter((visit) => visit.result === 'no_answer');
   $('noAnswerCount').textContent = missed.length;
   $('noAnswerList').innerHTML = missed.length ? missed.map((visit) => {
@@ -267,14 +297,23 @@ function openWithdrawalDetails(id) {
     ['Situação', withdrawalLabels[visit?.result || 'pending']],
     ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
   ].map(([label, value]) => `<div class="field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
-  $('withdrawalVisitActions').hidden = role === 'attendant' || !withdrawalVisible(item);
+  const actions = $('withdrawalVisitActions');
+  actions.hidden = role === 'attendant' || !withdrawalVisible(item);
+  for (const button of actions.querySelectorAll('[data-visit-result]')) {
+    button.hidden = button.dataset.visitResult === visit?.result;
+  }
   const earlier = withdrawalVisits.filter(entry=>entry.withdrawal_id === id && entry !== visit && entry.result !== 'pending');
   $('withdrawalHistory').innerHTML = earlier.length ? '<details><summary>Visitas anteriores</summary><ul>' + earlier.map(entry=>`<li><strong>${escapeHtml(entry.technician_name)} · ${escapeHtml(withdrawalLabels[entry.result])}</strong> · ${escapeHtml(displayDate(String(entry.created_at).slice(0,10)))}<p>${escapeHtml(entry.observation)}</p></li>`).join('')+'</ul></details>' : '';
   $('deleteWithdrawal').hidden = !canManageWithdrawals();
   $('withdrawalDetailOverlay').classList.add('open');
 }
+function canRecordResult(result) {
+  return ['admin','operator','technician'].includes(role)
+    && ['collected','equipment_not_found'].includes(result)
+    && latestVisit(selectedWithdrawalId)?.result !== result;
+}
 function openVisitForm(result) {
-  if (role === 'attendant' || !['collected','equipment_not_found'].includes(result)) return;
+  if (!canRecordResult(result)) return;
   withdrawalVisitResult = result;
   $('visitTitle').textContent = withdrawalLabels[result];
   $('visitObservation').value = '';
@@ -496,10 +535,12 @@ $('withdrawalForm').addEventListener('submit', async (event) => {
 });
 $('visitSave').addEventListener('click', async () => {
   const observation = $('visitObservation').value.trim();
-  if (!['collected','equipment_not_found'].includes(withdrawalVisitResult) || role === 'attendant') return;
+  if (!canRecordResult(withdrawalVisitResult) || $('visitSave').disabled) return;
   if (!observation) { $('visitError').textContent = 'Descreva o resultado da visita.'; $('visitObservation').focus(); return; }
+  $('visitSave').disabled = true;
   try { await recordWithdrawalVisit(selectedWithdrawalId, withdrawalVisitResult, observation); closeOverlay('visitOverlay'); closeOverlay('withdrawalDetailOverlay'); await refreshWithdrawals(); showToast('Resultado da visita registrado.'); }
   catch (error) { $('visitError').textContent = `Não foi possível registrar: ${error.message}`; }
+  finally { $('visitSave').disabled = false; }
 });
 $('withdrawalCsvFile').addEventListener('change', async (event) => {
   if (!['admin','operator'].includes(role)) return;
