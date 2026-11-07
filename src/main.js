@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
+import { listWithdrawalEquipmentModels, normalizeWithdrawalCity } from './data.js';
 import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
 
 const $ = (id) => document.getElementById(id);
@@ -202,11 +203,11 @@ function renderWithdrawals() {
   $('withdrawalVisitsCount').textContent = withdrawalVisits.length;
   const groups = [new Map(),new Map()];
   for (const item of visible) {
-    if (![item.name,item.contract_id,item.address,item.equipment,item.city,item.district].join(' ').toLocaleLowerCase('pt-BR').includes(term)) continue;
+    const city = normalizeWithdrawalCity(item.city) || 'Cidade não informada';
+    if (![item.name,item.contract_id,item.address,item.equipment,city,item.city,item.district].join(' ').toLocaleLowerCase('pt-BR').includes(term)) continue;
     const visit = latest.get(item.id);
-    const city = item.city?.trim() || 'Cidade não informada';
     const cities = groups[visit && visit.result !== 'pending' ? 1 : 0];
-    const cityKey = city.toLocaleUpperCase('pt-BR');
+    const cityKey = city.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleUpperCase('pt-BR');
     if (!cities.has(cityKey)) cities.set(cityKey,{label:city,items:[]});
     cities.get(cityKey).items.push({item,visit});
   }
@@ -452,13 +453,46 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && 
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
 $('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
-$('addWithdrawalBtn').addEventListener('click', () => { if (role === 'technician') return; $('withdrawalForm').reset(); $('withdrawalError').textContent = ''; $('withdrawalFormOverlay').classList.add('open'); $('withdrawalName').focus(); });
+$('addWithdrawalBtn').addEventListener('click', async () => {
+  if (role === 'technician') return;
+  $('withdrawalForm').reset();
+  $('withdrawalError').textContent = '';
+  $('withdrawalEquipmentHint').textContent = 'Deixe em branco para usar o equipamento vinculado ao contrato.';
+  const equipment = $('withdrawalEquipment');
+  equipment.options.length = 1;
+  equipment.disabled = true;
+  $('withdrawalFormOverlay').classList.add('open');
+  $('withdrawalName').focus();
+  void initializeClientPhone('withdrawalPhone').catch(()=>{ $('withdrawalPhoneHint').textContent='Não foi possível carregar os países. O telefone pode ficar em branco.'; });
+  try {
+    for (const model of await listWithdrawalEquipmentModels()) equipment.add(new Option(model,model));
+  } catch {
+    $('withdrawalEquipmentHint').textContent = 'Não foi possível carregar os modelos. O vínculo por contrato será consultado ao salvar.';
+  } finally { equipment.disabled = false; }
+});
 $('withdrawalSearch').addEventListener('input', renderWithdrawals);
 $('withdrawalForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('withdrawalError').textContent = '';
   if (!$('withdrawalForm').reportValidity()) return;
-  try { await createWithdrawal({ contract: $('withdrawalContract').value.trim(), name: $('withdrawalName').value, phone: $('withdrawalPhone').value, address: $('withdrawalAddress').value, city: $('withdrawalCity').value, district: $('withdrawalDistrict').value, equipment: $('withdrawalEquipment').value }, sessionUser.id); closeOverlay('withdrawalFormOverlay'); await refreshWithdrawals(); showToast('Cliente adicionado à lista de retirada.'); }
+  const name = $('withdrawalName').value.trim();
+  const address = $('withdrawalAddress').value.trim();
+  const city = normalizeWithdrawalCity($('withdrawalCity').value);
+  const district = $('withdrawalDistrict').value.trim();
+  if (!name || !address || !city || !district) {
+    $('withdrawalError').textContent = 'Preencha nome, endereço, cidade e bairro.';
+    return;
+  }
+  const submit = event.submitter;
+  if (submit) submit.disabled = true;
+  try {
+    const phone = await readClientPhone('withdrawalPhone');
+    await createWithdrawal({contract:$('withdrawalContract').value.trim(), name, phone, address, city, district, equipment:$('withdrawalEquipment').value}, sessionUser.id);
+    closeOverlay('withdrawalFormOverlay');
+    await refreshWithdrawals();
+    showToast('Retirada cadastrada.');
+  }
   catch (error) { $('withdrawalError').textContent = error.message; }
+  finally { if (submit) submit.disabled = false; }
 });
 $('visitSave').addEventListener('click', async () => {
   const observation = $('visitObservation').value.trim();

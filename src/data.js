@@ -159,6 +159,12 @@ export async function importCsv(records, userId) {
   return { imported: rows.length, skipped };
 }
 
+export function normalizeWithdrawalCity(value) {
+  const city = String(value ?? '').trim().replace(/\s+/g,' ');
+  const key = headerKey(city);
+  return ['PIEDADE DE CARATINGA','PIEDADE DE CARTINGA','PIEDDE DE CARATINGA'].includes(key) ? 'PIEDADE DE CARATINGA' : city;
+}
+
 export function normalizeWithdrawalCsv(records, userId) {
   let skipped = 0;
   const rows = new Map();
@@ -176,7 +182,7 @@ export function normalizeWithdrawalCsv(records, userId) {
     rows.set(contract,{
       legacy_id: `csv-retirada-sgp-${contract}`, contract_id: contract, name,
       phone: pick(item, ['TELEFONE', 'CELULAR', 'CONTATO']) || null,
-      address, city: byHeader(item,'CIDADE'), district: byHeader(item,'BAIRRO'),
+      address, city: normalizeWithdrawalCity(byHeader(item,'CIDADE')), district: byHeader(item,'BAIRRO'),
       equipment: 'A identificar', created_by: userId,
     });
   }
@@ -186,6 +192,17 @@ export function normalizeWithdrawalCsv(records, userId) {
 export async function findContractEquipment(contract) {
   if (!/^\d+$/.test(contract)) return null;
   return unwrap(await supabase.from('sgp_contract_equipment').select('equipment').eq('contract_id',contract).maybeSingle())?.equipment ?? null;
+}
+
+export async function listWithdrawalEquipmentModels() {
+  const models = new Set();
+  for (let start = 0; ; start += 1000) {
+    const rows = unwrap(await supabase.from('sgp_contract_equipment').select('equipment').order('contract_id').range(start,start+999));
+    for (const row of rows) for (const model of row.equipment.split(' · ')) {
+      if (model.trim()) models.add(model.trim());
+    }
+    if (rows.length < 1000) return [...models].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  }
 }
 
 export async function importContractEquipment(records) {
