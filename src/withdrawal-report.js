@@ -40,7 +40,7 @@ export function withdrawalMetrics(visits, from = '', to = '') {
 function columns(groups) {
   if (!groups.length) return '<p class="empty">Nenhum registro no período.</p>';
   const max = groups.reduce((largest, [, row]) => Math.max(largest, row.collected), 1);
-  return `<div class="withdrawal-chart-scroll"><ul class="withdrawal-columns" aria-label="Equipamentos recolhidos">
+  return `<div class="withdrawal-chart-scroll" tabindex="0" role="region" aria-label="Gráfico de equipamentos recolhidos"><ul class="withdrawal-columns">
     ${groups.map(([label,{collected}])=>`<li>
       <div class="withdrawal-column-plot"><strong>${number.format(collected)}</strong>
         <span class="withdrawal-column" aria-hidden="true" style="--height:${100 * collected / max}%"></span>
