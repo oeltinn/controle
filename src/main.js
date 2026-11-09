@@ -28,6 +28,7 @@ let recoveryMode = false;
 let authRevision = 0;
 let inbox = [];
 let stopInboxWatch = null;
+let authNotice = '';
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -58,6 +59,7 @@ function setAuthView(view, message = '') {
   $('authHeading').textContent = heading; $('authSubtitle').textContent = subtitle; $('authMessage').textContent = message;
 }
 async function showApp(user) {
+  if (user) authNotice = '';
   if (user?.id === sessionUser?.id && (appLoading || !$('appShell').hidden)) { sessionUser = user; return; }
   if (!user) {
     authRevision++;
@@ -265,7 +267,14 @@ $('notificationForm').addEventListener('submit', async event => {
     closeOverlay('composeNotificationOverlay');
     showToast(`Mensagem enviada a ${result.recipients} usuário(s); ${result.delivered} dispositivo(s) avisado(s).`);
     inbox = await getInbox(sessionUser.id); renderNotificationInbox();
-  } catch (error) { $('notificationError').textContent = error.message; }
+  } catch (error) {
+    if (error.code === 'SESSION_EXPIRED') {
+      authNotice = error.message;
+      await supabase.auth.signOut({ scope: 'local' });
+      await showApp(null);
+      setAuthView('login', authNotice);
+    } else $('notificationError').textContent = error.message;
+  }
   finally { button.disabled = false; }
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', event => {
@@ -565,10 +574,23 @@ if (!isSupabaseConfigured) {
   $('logoutButton').addEventListener('click', async () => { closeOverlay('profileOverlay'); try { await disablePush(); } catch {} const { error } = await supabase.auth.signOut(); if (error) showToast(`Não foi possível sair: ${error.message}`); });
   supabase.auth.onAuthStateChange((event, session) => { window.setTimeout(() => {
     if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; setAuthView('newPassword'); }
-    else if (event === 'SIGNED_OUT') { recoveryMode = false; void showApp(null); }
-    else if (!recoveryMode) void showApp(session?.user || null);
+    else if (event === 'SIGNED_OUT') { recoveryMode = false; void showApp(null); if (authNotice) setAuthView('login', authNotice); }
+    else if (event !== 'INITIAL_SESSION' && !recoveryMode) void showApp(session?.user || null);
   }, 0); });
-  supabase.auth.getSession().then(({ data, error }) => { if (error) { setAuthView('login', error.message); return; } if (new URLSearchParams(window.location.search).has('reset')) { recoveryMode = true; setAuthView('newPassword'); } else void showApp(data.session?.user || null); });
+  supabase.auth.getSession().then(async ({ data, error }) => {
+    if (error) { setAuthView('login', error.message); return; }
+    if (new URLSearchParams(window.location.search).has('reset')) { recoveryMode = true; setAuthView('newPassword'); return; }
+    if (!data.session) { void showApp(null); return; }
+    const { data: verified, error: verifyError } = await supabase.auth.getUser(data.session.access_token);
+    if (verifyError && [400, 401, 403].includes(verifyError.status)) {
+      authNotice = 'Sua sessão terminou. Entre novamente para continuar.';
+      await supabase.auth.signOut({ scope: 'local' });
+      void showApp(null); setAuthView('login', authNotice);
+      return;
+    }
+    if (verifyError) { setAuthView('login', 'Não foi possível validar a sessão agora. Atualize a página para tentar novamente.'); return; }
+    void showApp(verified.user);
+  });
 }
 
 document.addEventListener('click', (event) => {

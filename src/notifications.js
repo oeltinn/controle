@@ -69,7 +69,11 @@ export async function disablePush() {
 
 export async function sendNotification(input) {
   const { data: { session }, error } = await supabase.auth.getSession();
-  if (error || !session?.access_token) throw new Error('Entre novamente na conta para enviar.');
+  if (error || !session?.access_token) {
+    const expired = new Error('Sua sessão terminou. Entre novamente para enviar a notificação.');
+    expired.code = 'SESSION_EXPIRED';
+    throw expired;
+  }
   const request = accessToken => fetch('/api/notifications', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
@@ -79,7 +83,12 @@ export async function sendNotification(input) {
   if (response.status === 401) {
     const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
     if (refreshError || !refreshed.session?.access_token) {
-      throw new Error('Sua sessão expirou. Entre novamente para enviar a notificação.');
+      if (refreshError && ![400, 401, 403].includes(refreshError.status)) {
+        throw new Error('Não foi possível renovar a sessão agora. Tente novamente.');
+      }
+      const expired = new Error('Sua sessão terminou. Entre novamente para enviar a notificação.');
+      expired.code = 'SESSION_EXPIRED';
+      throw expired;
     }
     response = await request(refreshed.session.access_token);
   }
