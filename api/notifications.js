@@ -1,12 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim();
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 const publicKey = process.env.VITE_VAPID_PUBLIC_KEY?.trim();
 const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+const firebaseCredentials = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
 export const config = { maxDuration: 30 };
+
+function androidMessaging() {
+  if (!firebaseCredentials) return null;
+  const app = getApps().find(item => item.name === 'kontroll-fcm') || initializeApp({
+    credential: cert(JSON.parse(firebaseCredentials)),
+  }, 'kontroll-fcm');
+  return getMessaging(app);
+}
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -68,6 +79,37 @@ export default async function handler(req, res) {
       }
     }));
   }
-  return res.status(200).json({ notificationId, recipients: ids.length, delivered });
+  let androidDelivered = 0;
+  let androidError = null;
+  try {
+    const messaging = androidMessaging();
+    if (messaging) {
+      const { data: tokens, error: tokenError } = await admin.from('android_push_tokens')
+        .select('token,user_id').in('user_id', ids);
+      if (tokenError) throw tokenError;
+      for (let i = 0; i < tokens.length; i += 20) {
+        await Promise.all(tokens.slice(i, i + 20).map(async item => {
+          try {
+            await messaging.send({
+              token: item.token, notification: { title, body },
+              data: { notificationId, userId: item.user_id },
+              android: { priority: 'high', ttl: 3600_000 },
+            });
+            androidDelivered += 1;
+          } catch (error) {
+            if (['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(error.code)) {
+              await admin.from('android_push_tokens').delete().eq('token', item.token);
+            } else {
+              console.error('Android push delivery failed', { code: error.code });
+            }
+          }
+        }));
+      }
+    }
+  } catch (error) {
+    androidError = 'Os avisos Android não foram enviados. A mensagem permanece na caixa de entrada.';
+    console.error('Android push setup failed', { message: error.message });
+  }
+  return res.status(200).json({ notificationId, recipients: ids.length, delivered, androidDelivered, androidError });
 }
 
