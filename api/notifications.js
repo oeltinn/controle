@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const publicKey = process.env.VITE_VAPID_PUBLIC_KEY;
-const privateKey = process.env.VAPID_PRIVATE_KEY;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim();
+const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+const publicKey = process.env.VITE_VAPID_PUBLIC_KEY?.trim();
+const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
@@ -16,12 +16,21 @@ export default async function handler(req, res) {
   }
   const token = /^Bearer (.+)$/.exec(req.headers.authorization || '')?.[1];
   if (!token) return res.status(401).json({ error: 'Entre na sua conta para enviar.' });
+  const verifier = createClient(supabaseUrl, publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: auth, error: authError } = await verifier.auth.getUser(token);
+  if (authError || !auth?.user) {
+    if (authError && authError.status !== 401 && authError.status !== 403) {
+      console.error('Notification auth verification failed', { status: authError.status, code: authError.code });
+      return res.status(503).json({ error: 'Não foi possível validar a sessão agora. Tente novamente.' });
+    }
+    return res.status(401).json({ error: 'Sessão inválida.' });
+  }
   const supabase = createClient(supabaseUrl, publishableKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  const { data: auth, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !auth?.user) return res.status(401).json({ error: 'Sessão inválida.' });
   const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', auth.user.id).single();
   if (profileError || profile?.role !== 'admin') return res.status(403).json({ error: 'Somente administradores podem enviar notificações.' });
   const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
