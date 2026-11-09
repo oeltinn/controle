@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   });
   const { data: auth, error: authError } = await verifier.auth.getUser(token);
   if (authError || !auth?.user) {
-    if (authError && authError.status !== 401 && authError.status !== 403) {
+    if (authError && ![400, 401, 403].includes(authError.status)) {
       console.error('Notification auth verification failed', { status: authError.status, code: authError.code });
       return res.status(503).json({ error: 'Não foi possível validar a sessão agora. Tente novamente.' });
     }
