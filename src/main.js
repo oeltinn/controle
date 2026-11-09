@@ -265,7 +265,8 @@ $('notificationForm').addEventListener('submit', async event => {
       targetUser: direct ? $('notificationTargetUser').value : null,
     });
     closeOverlay('composeNotificationOverlay');
-    showToast(`Mensagem enviada a ${result.recipients} usuário(s); ${result.delivered} dispositivo(s) avisado(s).`);
+    showToast(`Mensagem enviada a ${result.recipients} usuário(s); ${result.delivered} navegador(es) e ${result.androidDelivered || 0} Android avisado(s).`);
+    if (result.androidError) showToast(`Não foi possível avisar aparelhos Android: ${result.androidError}`);
     inbox = await getInbox(sessionUser.id); renderNotificationInbox();
   } catch (error) {
     if (error.code === 'SESSION_EXPIRED') {
