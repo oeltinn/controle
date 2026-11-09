@@ -1,0 +1,106 @@
+/* Material 3 inspired color roles, shape, state layers and responsive surfaces. */
+:root{
+  --md-primary:#006b5e;--md-on-primary:#fff;--md-primary-container:#9cf3df;
+  --md-surface:#f7fbf9;--md-surface-container:#edf4f0;--md-surface-high:#e5eee9;
+  --md-outline:#78908a;--md-outline-variant:#c8d9d2;
+  --ink:#19332f;--muted:#526c65;--line:var(--md-outline-variant);
+  --paper:#fff;--bg:var(--md-surface);--aqua:var(--md-primary);
+  --aqua-dark:var(--md-primary);--green:var(--md-primary);
+  --greenbg:var(--md-primary-container);--shadow:0 8px 24px #17382b12;
+}
+body[data-theme="dark"]{
+  --md-primary:#82dbc7;--md-on-primary:#00382f;--md-primary-container:#195348;
+  --md-surface:#111d1b;--md-surface-container:#1b2a27;--md-surface-high:#253632;
+  --md-outline:#8ca8a0;--md-outline-variant:#3c554f;
+  --ink:#e4f2ed;--muted:#b2c8bf;--line:var(--md-outline-variant);
+  --paper:#1b2a27;--bg:var(--md-surface);--aqua:var(--md-primary);
+  --aqua-dark:var(--md-primary);--green:var(--md-primary);
+  --greenbg:var(--md-primary-container);--shadow:0 10px 30px #0004;
+}
+body{background:var(--bg)}
+.topbar{background:var(--md-surface-container);border:0;box-shadow:none}
+.wrap{max-width:1440px}
+.heading h1{font-weight:700;letter-spacing:-.035em}
+.heading p,.subtle,.chart-note,.hint{color:var(--muted)}
+.panel,.month-card,.chart-panel,.incident-panel,.auth-card,.summary-card{
+  border-color:var(--line);border-radius:24px;box-shadow:none;background:var(--paper);
+}
+.summary-card{padding:21px 24px;min-height:104px}
+.summary-card strong{font-weight:750;font-variant-numeric:tabular-nums}
+.panel-head{border-color:var(--line)}
+.primary,.secondary,.danger,.missed-button,.theme-toggle,.view-tab,.admin-menu button,
+.auth-links button,.withdrawal-card,.x,.status-select{
+  transition:background-color .2s ease,color .2s ease,border-color .2s ease,
+    box-shadow .2s ease,transform .2s ease;
+}
+.primary{background:var(--md-primary);color:var(--md-on-primary);border-radius:999px;box-shadow:none;min-height:42px;padding-inline:20px}
+.primary:hover{background:color-mix(in srgb,var(--md-primary) 84%,var(--ink));box-shadow:0 3px 10px #123b3027}
+.secondary,.theme-toggle{background:var(--md-surface-container);border-color:transparent;color:var(--ink);border-radius:999px;min-height:42px}
+.secondary:hover,.theme-toggle:hover{background:var(--md-surface-high)}
+.danger,.missed-button{border-radius:999px;min-height:42px}
+.header-nav .view-tab{border-radius:999px;padding:12px 18px}
+.header-nav .view-tab.active,.subnav .view-tab.active{background:var(--md-primary-container);color:#004d43}
+body[data-theme="dark"] .header-nav .view-tab.active,
+body[data-theme="dark"] .subnav .view-tab.active{color:#c0f7e9}
+.header-nav .view-tab.active::after{display:none}
+.subnav{border:0;background:var(--md-surface-container);border-radius:999px;gap:3px}
+.subnav .view-tab{border-radius:999px}
+.admin-menu{border-color:var(--line);border-radius:20px;box-shadow:var(--shadow);padding:8px}
+.admin-menu button{border-radius:12px}
+.admin-menu button:hover{background:var(--md-surface-container)}
+body[data-theme="dark"] .admin-menu button:hover{background:var(--md-surface-high)}
+.dialog{border-radius:28px;box-shadow:0 24px 60px #001e192b}
+.overlay{background:#071f1aaa}
+.x{border-radius:999px;background:var(--md-surface-container);color:var(--ink)}
+.x:hover{background:var(--md-surface-high)}
+.control :is(input,textarea,select),.search,.status-select,.recovery-filters :is(input,select){
+  border:1px solid var(--md-outline);border-radius:12px;background:var(--paper);color:var(--ink);
+  min-height:44px;
+}
+.control :is(input,textarea,select):focus,.search:focus,.status-select:focus{
+  outline:2px solid var(--md-primary);outline-offset:1px;box-shadow:none;border-color:var(--md-primary)
+}
+button:focus-visible,a:focus-visible,summary:focus-visible{
+  outline:3px solid var(--md-primary);outline-offset:3px
+}
+.client-panel{overflow:hidden}.client-panel summary{min-height:78px}
+.client-panel summary:hover{background:var(--md-surface-container)}
+.client-panel summary::after{width:30px;height:30px;display:grid;place-items:center;background:var(--md-surface-container);border-radius:50%;font-size:18px}
+.client-panel[open] summary::after{background:var(--md-primary-container);color:var(--md-primary)}
+.client-panel .count{background:var(--md-surface-container);color:var(--ink)}
+.client-panel .row{min-height:54px}
+.withdrawal-city,.withdrawal-batch{border-radius:20px;border-color:var(--line)}
+.withdrawal-card{border-radius:20px;box-shadow:none}
+.withdrawal-card:hover{background:var(--md-surface-container);box-shadow:var(--shadow)}
+.notification-bell{position:relative;display:grid;place-items:center;flex:none}
+.notification-badge{position:absolute;right:-5px;top:-5px;background:#a32231;color:#fff;border-radius:999px;
+  min-width:19px;height:19px;padding:0 4px;display:grid;place-items:center;font-size:10px;font-weight:700;
+  box-shadow:0 0 0 2px var(--md-surface-container)}
+.notification-list{padding:10px 18px;max-height:60dvh;overflow:auto}
+.notification-item{padding:16px;border-radius:18px;margin:5px 0;display:grid;gap:5px;background:var(--md-surface-container)}
+.notification-item.unread{background:var(--md-primary-container)}
+.notification-item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.notification-item strong{font-size:15px}.notification-item time{color:var(--muted);font-size:11px}
+.notification-item p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.notification-item button{justify-self:start;border:0;border-radius:999px;padding:7px 12px;
+  background:var(--paper);color:var(--md-primary);font-weight:700}
+#notificationsOverlay .form-actions{padding:0 24px 20px}
+#notificationForm{display:grid;gap:13px}
+#notificationForm .hint{margin:2px 0}
+body[data-theme="dark"] .incident-card{background:#3e2924;border-color:#6a4037}
+@media(max-width:720px){
+  .topbar{background:var(--md-surface-container)}
+  .wrap{padding:24px 16px 40px}
+  .heading h1{font-size:30px}
+  .summary-card{min-height:80px}
+  .client-panel summary{min-height:72px}
+  .admin-menu{border-radius:24px;box-shadow:0 14px 40px #10251e55}
+  .notification-bell{width:44px;height:44px}
+  .withdrawal-card{min-height:96px}
+  .dialog{border-radius:24px}
+  .auth-card{border-radius:32px}
+}
+@media(prefers-reduced-motion:reduce){
+  .primary,.secondary,.danger,.missed-button,.theme-toggle,.view-tab,.admin-menu button,
+  .auth-links button,.withdrawal-card,.x,.status-select{transition:none!important}
+}

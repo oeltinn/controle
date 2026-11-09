@@ -133,7 +133,7 @@ Situações suportadas: `REGULARIZADO`, `SIM`, `NÃO` e `EM CONTATO`. A situaç�
 - Em **Negativações → Clientes**, altere a situação para `SIM`, `NÃO`, `EM CONTATO` ou `REGULARIZADO`. A regularização continua exigindo a descrição do que foi feito.
 - Em **Negativações → Relatórios**, a pizza de negativações agrupa ocorrências pelo mês da data de negativação; a pizza de situação total conta clientes atuais por situação; o gráfico de colunas compara regularizações registradas por mês com clientes atualmente `SIM` agrupados pelo mês da negativação. Essa página fica disponível apenas para operadores e administradores.
 - Administradores abrem o menu de três linhas no topo para autorizar, rebaixar ou tornar administradores de usuários cadastrados.
-- No computador, o tema é alternado pelo ícone no topo. No celular, navegação, tema e conta ficam no menu de três linhas. O tema escolhido persiste no login; a primeira visita usa tema claro.
+- No computador e no celular, o tema e a conta ficam no menu de três linhas. O tema escolhido persiste no login; a primeira visita usa tema claro.
 
 ## Migração do banco
 
@@ -163,3 +163,18 @@ A aba atual é salva por usuário em `sessionStorage`. Renovar a sessão ou volt
 Os gráficos mensais contam as datas cadastradas de negativação e regularização, incluindo meses intermediários sem eventos. O sistema não mantém ciclos anteriores de negativação de um mesmo cadastro. As consultas são paginadas para que os totais não parem nos primeiros 1.000 registros.
 
 Validação: testes de interface com dados fictícios para os quatro perfis, em 390px e 1280px; totais, grupos, navegação, renovação de sessão, tema e sobreposição da conta. A função de retirada foi testada no banco em uma transação revertida, verificando atribuição do técnico e rejeição de observação vazia. Nenhum registro de teste foi mantido.
+
+## Notificações no aplicativo e no Android
+
+As migrações `20261109182947_web_notifications.sql` e `20261109183629_restrict_notification_table_grants.sql` criam a caixa de entrada e as inscrições de Web Push. A função `/api/notifications` da Vercel valida a sessão e a função **Administrador** no servidor. A função SQL escolhe usuários autorizados por função ou por conta individual e impõe limite de 20 mensagens por hora a cada administrador. A mensagem permanece na caixa de entrada mesmo sem inscrição em notificações do dispositivo. As chaves de inscrição não são consultáveis pelo navegador; somente a função da Vercel, com a chave de servidor, pode lê-las.
+
+1. Configure `VITE_VAPID_PUBLIC_KEY` como variável pública do Vite e `VAPID_PRIVATE_KEY` como variável privada da Vercel. Gere o par de chaves com `web-push.generateVAPIDKeys()`; guarde a privada fora do repositório. A integração também precisa de `SUPABASE_SERVICE_ROLE_KEY` apenas na Vercel, além de `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` já usadas pelo aplicativo.
+2. Publique pela Vercel em HTTPS. O serviço `/push-sw.js` e o manifesto `/manifest.webmanifest` são servidos da pasta `public`.
+3. Cada usuário entra na conta e toca em **Ativar notificações neste dispositivo** no menu. No Android, aceita a permissão do Chrome. Pode voltar ao menu para desativar. Ao sair da conta, a inscrição desse dispositivo é removida.
+4. Um administrador abre **Enviar notificação** no menu, informa título e mensagem e escolhe uma função ou um usuário específico. O sino abre a caixa de entrada e mostra a quantidade de mensagens não lidas.
+
+Avisos externos dependem do suporte do navegador, da permissão local e de conexão do dispositivo. O envio informa quantos dispositivos aceitaram o Web Push; os demais destinatários ainda recebem a mensagem na caixa de entrada. Para desenvolvimento local da rota `/api/notifications`, use `vercel dev` com as variáveis de servidor configuradas.
+
+## Aparência
+
+As superfícies, cores, estados de foco, botões e espaçamentos seguem a hierarquia visual do Material Design 3, preservando o verde da marca. Os quadros **Negativados**, **Clientes em acompanhamento** e **Regularizados** começam recolhidos em Negativações. O rodapé da interface mostra `© 2026 Kontroll. Desenvolvido por Elton Augusto`.

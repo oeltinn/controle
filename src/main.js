@@ -2,6 +2,7 @@ import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-r
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
+import { disablePush, enablePush, getInbox, getPushSubscription, markNotificationRead, sendNotification, syncExistingPushSubscription, watchInbox } from './notifications.js';
 import { listWithdrawalEquipmentModels, normalizeWithdrawalCity } from './data.js';
 import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
 
@@ -25,6 +26,8 @@ let currentView = 'monthly';
 let withdrawalTab = 'list';
 let recoveryMode = false;
 let authRevision = 0;
+let inbox = [];
+let stopInboxWatch = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -47,6 +50,7 @@ function setAuthView(view, message = '') {
   document.body.dataset.auth = 'true';
   $('authShell').hidden = false; $('appShell').hidden = true;
   $('logoutButton').hidden = true; $('adminMenuWrap').hidden = true;
+  $('notificationBell').hidden = true;
  
   for (const id of ['loginForm', 'signupForm', 'recoveryForm', 'newPasswordForm']) $(id).hidden = id !== `${view}Form`;
   const titles = { login: ['Entrar', ''], signup: ['Criar usuário', 'Novos usuários recebem acesso pendente.'], recovery: ['Recuperar senha', 'Enviaremos um link para o e-mail cadastrado.'], newPassword: ['Criar nova senha', 'Escolha uma nova senha para sua conta.'] };
@@ -57,6 +61,7 @@ async function showApp(user) {
   if (user?.id === sessionUser?.id && (appLoading || !$('appShell').hidden)) { sessionUser = user; return; }
   if (!user) {
     authRevision++;
+    stopInboxWatch?.(); stopInboxWatch = null; inbox = []; $('notificationBell').hidden = true;
     if (sessionUser) sessionStorage.removeItem(`kontroll-welcome:${sessionUser.id}`);
     appLoading = false; document.querySelectorAll('.overlay.open').forEach((el) => closeOverlay(el.id));
     sessionUser = null; document.querySelector('.header-nav').hidden = true; $('appShell').hidden = true; $('authShell').hidden = false;
@@ -75,6 +80,7 @@ async function showApp(user) {
   appLoading = false; document.body.dataset.userRole = role;
   $('mobileProfileName').textContent = myProfile?.display_name || 'Minha conta';
   $('adminMenuWrap').hidden = false; $('manageUsersBtn').hidden = role !== 'admin';
+  $('composeNotification').hidden = role !== 'admin';
   if (!['admin', 'operator', 'technician', 'attendant'].includes(role)) {
     document.querySelectorAll('[data-view]').forEach((button) => { button.hidden = true; });
     $('appShell').hidden = true; $('authShell').hidden = false;
@@ -92,6 +98,10 @@ async function showApp(user) {
   });
   $('clientTools').hidden = role === 'technician';
   $('authShell').hidden = true; $('appShell').hidden = false;
+  $('notificationBell').hidden = false;
+  stopInboxWatch?.();
+  stopInboxWatch = watchInbox(user.id, rows => { if (sessionUser?.id === user.id) { inbox = rows; renderNotificationInbox(); } });
+  void syncExistingPushSubscription().then(updatePushSetting).catch(() => updatePushSetting(false));
   setView(sessionStorage.getItem(`kontroll-view:${user.id}`) || 'monthly');
   await refreshClients();
   showWelcome(user);
@@ -190,6 +200,77 @@ function setView(view) {
   if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
 }
 function closeMenu() { $('adminMenu').hidden=true; $('adminMenuToggle').setAttribute('aria-expanded','false'); }
+
+function updatePushSetting(enabled) {
+  $('notificationSettings').textContent = enabled ? 'Desativar notificações neste dispositivo' : 'Ativar notificações neste dispositivo';
+}
+function renderNotificationInbox() {
+  const unread = inbox.filter(item => !item.read_at).length;
+  $('notificationBadge').hidden = unread === 0;
+  $('notificationBadge').textContent = unread > 99 ? '99+' : String(unread);
+  $('notificationBell').setAttribute('aria-label', unread ? `Notificações, ${unread} não lidas` : 'Notificações');
+  $('notificationList').innerHTML = inbox.length ? inbox.map(item => {
+    const message = item.app_notifications || {};
+    const date = message.created_at ? new Date(message.created_at).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' }) : '';
+    return `<article class="notification-item ${item.read_at ? '' : 'unread'}"><div class="notification-item-head"><strong>${escapeHtml(message.title || 'Notificação')}</strong><time>${escapeHtml(date)}</time></div><p>${escapeHtml(message.body || '')}</p>${item.read_at ? '' : `<button type="button" data-notification-read="${escapeHtml(item.notification_id)}">Marcar como lida</button>`}</article>`;
+  }).join('') : '<div class="empty">Nenhuma notificação por enquanto.</div>';
+}
+$('notificationBell').addEventListener('click', async () => {
+  $('notificationsOverlay').classList.add('open');
+  try { inbox = await getInbox(sessionUser.id); renderNotificationInbox(); }
+  catch (error) { showToast(`Não foi possível carregar notificações: ${error.message}`); }
+});
+$('notificationList').addEventListener('click', async event => {
+  const button = event.target.closest('[data-notification-read]'); if (!button) return;
+  try { await markNotificationRead(button.dataset.notificationRead); inbox = await getInbox(sessionUser.id); renderNotificationInbox(); }
+  catch (error) { showToast(`Não foi possível marcar como lida: ${error.message}`); }
+});
+$('notificationSettings').addEventListener('click', async () => {
+  closeMenu();
+  try {
+    const existing = await getPushSubscription();
+    if (existing) { await disablePush(); updatePushSetting(false); showToast('Notificações desativadas neste dispositivo.'); }
+    else { await enablePush(); updatePushSetting(true); showToast('Notificações ativadas neste dispositivo.'); }
+  } catch (error) { showToast(error.message); }
+});
+$('composeNotification').addEventListener('click', async () => {
+  if (role !== 'admin') return;
+  closeMenu(); $('notificationForm').reset(); $('notificationError').textContent = '';
+  $('notificationTargetType').dispatchEvent(new Event('change'));
+  $('composeNotificationOverlay').classList.add('open');
+  try {
+    const users = await listProfiles();
+    $('notificationTargetUser').innerHTML = users.filter(user => user.role !== 'pending')
+      .sort((a,b) => (a.display_name || '').localeCompare(b.display_name || '', 'pt-BR'))
+      .map(user => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.display_name || user.email)}</option>`).join('');
+  } catch (error) { $('notificationError').textContent = `Não foi possível carregar usuários: ${error.message}`; }
+});
+$('notificationTargetType').addEventListener('change', () => {
+  const direct = $('notificationTargetType').value === 'user';
+  $('notificationRoleWrap').hidden = direct; $('notificationTargetRole').disabled = direct;
+  $('notificationUserWrap').hidden = !direct; $('notificationTargetUser').disabled = !direct;
+});
+$('notificationForm').addEventListener('submit', async event => {
+  event.preventDefault(); if (role !== 'admin') return;
+  $('notificationError').textContent = '';
+  const direct = $('notificationTargetType').value === 'user';
+  if (direct && !$('notificationTargetUser').value) { $('notificationError').textContent = 'Escolha um usuário.'; return; }
+  const button = $('sendNotification'); button.disabled = true;
+  try {
+    const result = await sendNotification({
+      title: $('notificationTitle').value.trim(), body: $('notificationBody').value.trim(),
+      targetRole: direct ? null : $('notificationTargetRole').value,
+      targetUser: direct ? $('notificationTargetUser').value : null,
+    });
+    closeOverlay('composeNotificationOverlay');
+    showToast(`Mensagem enviada a ${result.recipients} usuário(s); ${result.delivered} dispositivo(s) avisado(s).`);
+    inbox = await getInbox(sessionUser.id); renderNotificationInbox();
+  } catch (error) { $('notificationError').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', event => {
+  if (event.data?.type === 'open-notifications' && sessionUser) $('notificationBell').click();
+});
 
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => setView(button.dataset.view)));
 
@@ -481,7 +562,7 @@ if (!isSupabaseConfigured) {
     event.preventDefault(); clearErrors(); const { data, error } = await supabase.auth.updateUser({ password: $('newPassword').value });
     if (error) { $('newPasswordError').textContent = error.message; return; } recoveryMode = false; await showApp(data.user); showToast('Senha atualizada.'); history.replaceState({}, '', window.location.pathname);
   });
-  $('logoutButton').addEventListener('click', async () => { closeOverlay('profileOverlay'); const { error } = await supabase.auth.signOut(); if (error) showToast(`Não foi possível sair: ${error.message}`); });
+  $('logoutButton').addEventListener('click', async () => { closeOverlay('profileOverlay'); try { await disablePush(); } catch {} const { error } = await supabase.auth.signOut(); if (error) showToast(`Não foi possível sair: ${error.message}`); });
   supabase.auth.onAuthStateChange((event, session) => { window.setTimeout(() => {
     if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; setAuthView('newPassword'); }
     else if (event === 'SIGNED_OUT') { recoveryMode = false; void showApp(null); }
