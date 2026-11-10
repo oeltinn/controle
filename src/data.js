@@ -72,7 +72,7 @@ function headerKey(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleUpperCase('pt-BR').replace(/\s+/g, ' ');
 }
 
-export function parseCsv(text, { sgpContracts = false, equipmentCatalog = false } = {}) {
+export function parseCsv(text, { sgpContracts = false, equipmentCatalog = false, clientCatalog = false } = {}) {
   const input = String(text).replace(/^\uFEFF/, '');
   const lines = input.split(/\r?\n/);
   const catalogHeader = cells => {
@@ -80,10 +80,10 @@ export function parseCsv(text, { sgpContracts = false, equipmentCatalog = false 
     return keys.some(key=>['CONTRATO','CONTRATO ID','ID CONTRATO'].includes(key)) &&
       keys.some(key=>['MODELO','MODELO ONU','EQUIPAMENTO'].includes(key));
   };
-  const header = cells => sgpContracts ? ['CLIENTE ID','CONTRATO ID','CLIENTE','ENDERECO','STATUS'].every(key=>cells.some(cell=>headerKey(cell)===key)) : catalogHeader(cells);
-  const hasPreamble = sgpContracts || equipmentCatalog;
+  const header = cells => sgpContracts ? ['CLIENTE ID','CONTRATO ID','CLIENTE','ENDERECO','STATUS'].every(key=>cells.some(cell=>headerKey(cell)===key)) : clientCatalog ? ['CONTRATO ID','CLIENTE','ENDERECO','BAIRRO','CIDADE'].every(key=>cells.some(cell=>headerKey(cell)===key)) : catalogHeader(cells);
+  const hasPreamble = sgpContracts || equipmentCatalog || clientCatalog;
   const firstLine = (hasPreamble ? lines.find(line=>header(line.split(/[,;\t]/).map(cell=>cell.replaceAll('"','')))) : lines[0]) || '';
-  if (hasPreamble && !firstLine) throw new Error(equipmentCatalog ? 'O catálogo precisa das colunas Contrato e Modelo.' : 'Use o CSV do relatório Contrato → Status do SGP.');
+  if (hasPreamble && !firstLine) throw new Error(equipmentCatalog ? 'O catálogo precisa das colunas Contrato e Modelo.' : clientCatalog ? 'O catálogo precisa das colunas Contrato ID, Cliente, Endereço, Bairro e Cidade.' : 'Use o CSV do relatório Contrato → Status do SGP.');
   const delimiter = [',', ';', '\t'].map((candidate) => ({ candidate, count: firstLine.split(candidate).length - 1 })).sort((a, b) => b.count - a.count)[0].candidate;
   const rows = [];
   let row = [], field = '', quoted = false;
@@ -192,6 +192,32 @@ export function normalizeWithdrawalCsv(records, userId) {
 export async function findContractEquipment(contract) {
   if (!/^\d+$/.test(contract)) return null;
   return unwrap(await supabase.from('sgp_contract_equipment').select('equipment').eq('contract_id',contract).maybeSingle())?.equipment ?? null;
+}
+
+export async function getClientCatalogState() {
+  return unwrap(await supabase.from('sgp_client_catalog_state').select('imported_at,filename,row_count').eq('id',true).maybeSingle());
+}
+
+export async function findClientCatalogContract(contract) {
+  if (!/^\d+$/.test(contract)) return null;
+  return unwrap(await supabase.from('sgp_client_catalog').select('contract_id,name,phone,street,neighborhood,city,equipment').eq('contract_id',contract).maybeSingle());
+}
+
+export async function replaceClientCatalog(records, filename) {
+  const rows = new Map();
+  for (const record of records) {
+    const contract_id = byHeader(record,'CONTRATO ID');
+    const name = byHeader(record,'CLIENTE');
+    const street = [byHeader(record,'ENDEREÇO'),byHeader(record,'NÚMERO')].filter(Boolean).join(', ');
+    const neighborhood = byHeader(record,'BAIRRO');
+    const city = normalizeWithdrawalCity(byHeader(record,'CIDADE'));
+    if (!/^\d+$/.test(contract_id) || !name || !street || !neighborhood || !city) continue;
+    const phone = byHeader(record,'TELEFONE') || byHeader(record,'CELULAR') ||
+      Object.entries(record).find(([key,value])=>key.startsWith('COLUNA_VAZIA_') && /\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4}/.test(value))?.[1] || '';
+    rows.set(contract_id,{contract_id,name,phone,street,neighborhood,city,equipment:byHeader(record,'EQUIPAMENTO') || null});
+  }
+  if (!rows.size) throw new Error('Use o CSV do SGP com Contrato ID, Cliente, Endereço, Bairro e Cidade.');
+  return unwrap(await supabase.rpc('replace_sgp_client_catalog',{p_filename:filename,p_rows:[...rows.values()]}));
 }
 
 export async function listWithdrawalEquipmentModels() {

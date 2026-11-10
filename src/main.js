@@ -4,9 +4,13 @@ import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
 import { disablePush, enablePush, getInbox, getPushSubscription, markNotificationRead, sendNotification, syncExistingPushSubscription, watchInbox } from './notifications.js';
 import { listWithdrawalEquipmentModels, normalizeWithdrawalCity } from './data.js';
-import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
+import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findClientCatalogContract, getClientCatalogState, replaceClientCatalog, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
 
 const $ = (id) => document.getElementById(id);
+const catalogAgeNotice = document.createElement('p');
+catalogAgeNotice.id = 'catalogAgeNotice'; catalogAgeNotice.hidden = true;
+document.querySelector('.heading').after(catalogAgeNotice);
+$('openCatalog').textContent = 'Importar catálogo';
 let clients = [];
 let sessionUser = null;
 let role = 'pending';
@@ -28,6 +32,20 @@ let recoveryMode = false;
 let authRevision = 0;
 let inbox = [];
 let stopInboxWatch = null;
+let clientCatalogState = null;
+const catalogExpired = () => clientCatalogState && Date.now()-new Date(clientCatalogState.imported_at).getTime() >= 21*86400000;
+async function refreshClientCatalogState() {
+  clientCatalogState = await getClientCatalogState();
+  const notice = $('catalogAgeNotice');
+  const age = clientCatalogState ? (Date.now()-new Date(clientCatalogState.imported_at).getTime())/86400000 : 0;
+  notice.hidden = currentView !== 'withdrawals' || role !== 'admin' || !clientCatalogState || age < 7;
+  notice.className = `catalog-age-notice ${age >= 21 ? 'red' : 'yellow'}`;
+  if (!notice.hidden) notice.textContent = age >= 21
+    ? `O catálogo de clientes importado em ${displayDate(clientCatalogState.imported_at.slice(0,10))} está desatualizado. Importe uma nova planilha. Cadastros manuais estão bloqueados para todos.`
+    : `O catálogo de clientes importado em ${displayDate(clientCatalogState.imported_at.slice(0,10))} pode estar desatualizado. Programe uma nova importação.`;
+  $('addBtn').disabled = Boolean(catalogExpired());
+  $('addWithdrawalBtn').disabled = Boolean(catalogExpired());
+}
 let authNotice = '';
 
 function escapeHtml(value) {
@@ -101,6 +119,7 @@ async function showApp(user) {
   $('clientTools').hidden = role === 'technician';
   $('authShell').hidden = true; $('appShell').hidden = false;
   $('notificationBell').hidden = false;
+  void refreshClientCatalogState().catch(() => {});
   stopInboxWatch?.();
   stopInboxWatch = watchInbox(user.id, rows => { if (sessionUser?.id === user.id) { inbox = rows; renderNotificationInbox(); } });
   void syncExistingPushSubscription().then(updatePushSetting).catch(() => updatePushSetting(false));
@@ -205,6 +224,7 @@ function setView(view) {
   renderWithdrawalTab();
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
   $('openCatalog').hidden = role !== 'admin';
+  $('catalogAgeNotice').hidden = view !== 'withdrawals' || role !== 'admin' || !clientCatalogState || (Date.now()-new Date(clientCatalogState.imported_at).getTime()) < 7*86400000;
   $('openImports').hidden = !canManageWithdrawals();
   document.querySelector('label[for=csvImportFile]').hidden = !['admin','operator'].includes(role);
   closeMenu();
@@ -643,6 +663,7 @@ $('addWithdrawalBtn').addEventListener('click', async () => {
 $('withdrawalSearch').addEventListener('input', renderWithdrawals);
 $('withdrawalForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('withdrawalError').textContent = '';
+  if (catalogExpired()) { $('withdrawalError').textContent='Catálogo vencido. Peça ao administrador uma nova planilha.'; return; }
   if (!$('withdrawalForm').reportValidity()) return;
   const name = $('withdrawalName').value.trim();
   const address = $('withdrawalAddress').value.trim();
@@ -798,6 +819,13 @@ function bindWithdrawalReview() {
     finally { button.disabled=false; }
   });
   let catalogFile=null;
+  let catalogType='onu';
+  const selectCatalogType=type=>{
+    catalogType=type; $('catalogTitle').textContent=`Importar catálogo de ${type==='onu'?'ONU':'clientes'}`;
+    $('catalogOnu').classList.toggle('active',type==='onu'); $('catalogClients').classList.toggle('active',type==='clients');
+    $('catalogOnuHelp').hidden=type!=='onu'; $('catalogClientsHelp').hidden=type!=='clients';
+    $('equipmentCsvFile').value=''; choose(null);
+  };
   const drop=$('catalogDrop');
   const confirm=$('confirmCatalog');
   const choose=file=>{
@@ -806,6 +834,8 @@ function bindWithdrawalReview() {
     $('catalogError').textContent=file && !catalogFile ? 'Selecione um arquivo CSV.' : '';
     confirm.disabled=!catalogFile;
   };
+  $('catalogOnu').addEventListener('click',()=>selectCatalogType('onu'));
+  $('catalogClients').addEventListener('click',()=>selectCatalogType('clients'));
   $('openCatalog').addEventListener('click',()=>{
     if(role!=='admin') return;
     $('equipmentCsvFile').value='';
@@ -832,10 +862,13 @@ function bindWithdrawalReview() {
       let content;
       try {content=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
       catch {content=new TextDecoder('windows-1252').decode(bytes);}
-      const count=await importContractEquipment(parseCsv(content,{equipmentCatalog:true}));
+      const count=catalogType==='onu'
+        ? await importContractEquipment(parseCsv(content,{equipmentCatalog:true}))
+        : await replaceClientCatalog(parseCsv(content,{clientCatalog:true}),file.name);
       closeOverlay('catalogOverlay');
       choose(null);
       await refreshWithdrawals();
+      if(catalogType==='clients') await refreshClientCatalogState();
       showToast(`${count} contrato(s) atualizados no catálogo.`);
     } catch(error) { $('catalogError').textContent=error.message; }
     finally {
@@ -849,8 +882,38 @@ bindWithdrawalReview();
 
 
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });
+async function suggestClientCatalog(contract, type) {
+  const error = $(type === 'client' ? 'formError' : 'withdrawalError');
+  if (!/^\d+$/.test(contract)) return;
+  try {
+    const row = await findClientCatalogContract(contract);
+    if ($(type === 'client' ? 'contract' : 'withdrawalContract').value.trim() !== contract) return;
+    if (!row) { error.textContent = `Contrato ${contract} não encontrado no catálogo de clientes.`; return; }
+    error.textContent = '';
+    if (!window.confirm(`Contrato ${contract} encontrado para ${row.name}. Preencher os dados deste cliente?`)) return;
+    const equipment = row.equipment || await findContractEquipment(contract).catch(()=>null);
+    if (type === 'client') {
+      $('clientName').value=row.name; $('street').value=row.street;
+      $('neighborhood').value=row.neighborhood; $('city').value=row.city;
+      if (equipment && [...$('onu').options].some(o=>o.value===equipment)) $('onu').value=equipment;
+    } else {
+      $('withdrawalName').value=row.name; $('withdrawalAddress').value=row.street;
+      $('withdrawalDistrict').value=row.neighborhood; $('withdrawalCity').value=row.city;
+      if (equipment) {
+        if (![...$('withdrawalEquipment').options].some(o=>o.value===equipment)) $('withdrawalEquipment').add(new Option(equipment,equipment));
+        $('withdrawalEquipment').value=equipment;
+      }
+    }
+    if (row.phone && row.phone.replace(/\D/g,'').length >= 10) {
+      $(type === 'client' ? 'clientPhone' : 'withdrawalPhone').value=row.phone;
+    }
+  } catch { error.textContent='Não foi possível consultar o catálogo de clientes agora.'; }
+}
+$('contract').addEventListener('change',event=>void suggestClientCatalog(event.target.value.trim(),'client'));
+$('withdrawalContract').addEventListener('change',event=>void suggestClientCatalog(event.target.value.trim(),'withdrawal'));
 $('clientForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('formError').textContent = ''; if (!$('clientForm').reportValidity()) return;
+  if (catalogExpired()) { $('formError').textContent='Catálogo vencido. Peça ao administrador uma nova planilha.'; return; }
   try { const phone = await readClientPhone(); await createClientRecord({ phone, name: $('clientName').value, contract: $('contract').value, street: $('street').value, neighborhood: $('neighborhood').value, city: $('city').value, onu: $('onu').value, router: $('routerEnabled').checked ? $('routerModel').value : '' }, sessionUser.id); closeOverlay('formOverlay'); await refreshClients(); showToast('Cliente cadastrado como negativado.'); }
   catch (error) { $('formError').textContent = error.message; }
 });
