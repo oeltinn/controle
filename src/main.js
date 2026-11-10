@@ -29,6 +29,8 @@ let authRevision = 0;
 let inbox = [];
 let stopInboxWatch = null;
 let authNotice = '';
+const onuReportOwnerId = '332c4a59-47ea-44d6-9c5d-1538faa4ee5a';
+const canAccessOnuReports = () => role === 'admin' && sessionUser?.id === onuReportOwnerId;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -96,7 +98,8 @@ async function showApp(user) {
     const view = button.dataset.view;
     button.hidden = (view === 'monthly' && ['technician', 'attendant'].includes(role))
       || (view === 'clients' && role === 'technician')
-      || (view === 'reports' && ['technician', 'attendant'].includes(role));
+      || (view === 'reports' && ['technician', 'attendant'].includes(role))
+      || (view === 'onuReports' && !canAccessOnuReports());
   });
   $('clientTools').hidden = role === 'technician';
   $('authShell').hidden = true; $('appShell').hidden = false;
@@ -187,11 +190,11 @@ function setTheme(theme) {
 setTheme(localStorage.getItem('fibra_theme') || 'light');
 
 function setView(view) {
-  const allowed = role === 'technician' ? ['withdrawals'] : role === 'attendant' ? ['clients','withdrawals'] : ['monthly','clients','reports','withdrawals'];
+  const allowed = role === 'technician' ? ['withdrawals'] : role === 'attendant' ? ['clients','withdrawals'] : role === 'admin' ? ['monthly','clients','reports','withdrawals',...(canAccessOnuReports() ? ['onuReports'] : [])] : ['monthly','clients','reports','withdrawals'];
   if (!allowed.includes(view)) view = allowed[0];
   currentView = view;
   if (sessionUser) sessionStorage.setItem(`kontroll-view:${sessionUser.id}`, view);
-  for (const key of ['monthly','clients','reports','withdrawals']) $(`${key}View`).hidden = key !== view;
+  for (const key of ['monthly','clients','reports','withdrawals','onuReports']) $(`${key}View`).hidden = key !== view;
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.hidden = !allowed.includes(button.dataset.view);
     const active = button.dataset.view === view || (button.dataset.view === 'clients' && view === 'reports' && !button.closest('#negSubnav'));
@@ -199,7 +202,7 @@ function setView(view) {
     if (active) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');
   });
   $('negSubnav').hidden = !['clients','reports'].includes(view);
-  const heading = { monthly:['Visão geral','Resultados da operação em um só lugar.'], clients:['Negativações','Pesquise cadastros e acompanhe cada situação.'], reports:['Negativações','Relatórios e indicadores dos clientes.'], withdrawals:['Retirada de ONU','Organize os contatos e as visitas dos técnicos.'] }[view];
+  const heading = { monthly:['Visão geral','Resultados da operação em um só lugar.'], clients:['Negativações','Pesquise cadastros e acompanhe cada situação.'], reports:['Negativações','Relatórios e indicadores dos clientes.'], withdrawals:['Retirada de ONU','Organize os contatos e as visitas dos técnicos.'], onuReports:['Relatório mensal de ONU','Prepare e confira as fontes antes de calcular os indicadores.'] }[view];
   $('pageTitle').textContent=heading[0]; $('pageSubtitle').textContent=heading[1];
   $('clientTools').hidden = view !== 'clients';
   renderWithdrawalTab();
@@ -212,6 +215,14 @@ function setView(view) {
   if (view === 'withdrawals' && sessionUser) void refreshWithdrawals();
 }
 function closeMenu() { $('adminMenu').hidden=true; $('adminMenuToggle').setAttribute('aria-expanded','false'); }
+
+$('onuSourceFile').addEventListener('change', (event) => {
+  if (!canAccessOnuReports()) { event.target.value = ''; return; }
+  const files = [...event.target.files];
+  const classify = (name) => /comodato/i.test(name) ? 'Comodato' : /lan[cç]amento|estoque/i.test(name) ? 'Estoque' : /plano/i.test(name) ? 'Histórico de planos' : /\bos\b|ordem/i.test(name) ? 'Ordem de serviço' : 'A identificar';
+  $('onuSourceStatus').textContent = files.length ? `${files.length} arquivo(s) selecionado(s). Prévia local; nenhum dado foi enviado ou salvo.` : 'Nenhum arquivo selecionado. A prévia não envia nem salva dados.';
+  $('onuSourcePreview').innerHTML = files.length ? files.map(file => `<tr><td>${escapeHtml(file.name)}</td><td>${(file.size / 1024).toFixed(1)} KB</td><td>${classify(file.name)}</td></tr>`).join('') : '<tr><td colspan="3">Aguardando arquivos.</td></tr>';
+});
 
 $('rememberSession').checked = localStorage.getItem('kontroll-remember') !== '0';
 $('pushLater').addEventListener('click', () => { sessionStorage.setItem('kontroll-push-prompt','1'); closeOverlay('pushPermissionOverlay'); });
