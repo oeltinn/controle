@@ -216,14 +216,6 @@ function setView(view) {
 }
 function closeMenu() { $('adminMenu').hidden=true; $('adminMenuToggle').setAttribute('aria-expanded','false'); }
 
-$('onuSourceFile').addEventListener('change', (event) => {
-  if (!canAccessOnuReports()) { event.target.value = ''; return; }
-  const files = [...event.target.files];
-  const classify = (name) => /comodato/i.test(name) ? 'Comodato' : /lan[cç]amento|estoque/i.test(name) ? 'Estoque' : /plano/i.test(name) ? 'Histórico de planos' : /\bos\b|ordem/i.test(name) ? 'Ordem de serviço' : 'A identificar';
-  $('onuSourceStatus').textContent = files.length ? `${files.length} arquivo(s) selecionado(s). Prévia local; nenhum dado foi enviado ou salvo.` : 'Nenhum arquivo selecionado. A prévia não envia nem salva dados.';
-  $('onuSourcePreview').innerHTML = files.length ? files.map(file => `<tr><td>${escapeHtml(file.name)}</td><td>${(file.size / 1024).toFixed(1)} KB</td><td>${classify(file.name)}</td></tr>`).join('') : '<tr><td colspan="3">Aguardando arquivos.</td></tr>';
-});
-
 $('rememberSession').checked = localStorage.getItem('kontroll-remember') !== '0';
 $('pushLater').addEventListener('click', () => { sessionStorage.setItem('kontroll-push-prompt','1'); closeOverlay('pushPermissionOverlay'); });
 $('pushAllow').addEventListener('click', async () => {
