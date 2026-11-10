@@ -148,11 +148,17 @@ function displayDate(value) {
 }
 function negativeDate(client) { return client.negativado_status ? (client.negativation_date || null) : (client.negative_date || null); }
 function regularDate(client) { return client.regularization_date || client.regularized_date || null; }
+function recordOrigin(record) {
+  if (record.import_id || record.legacy_id?.startsWith('csv-') || (record.source_data && Object.keys(record.source_data).length)) return 'Importado de planilha';
+  const name = record.created_by_name || (record.created_by === sessionUser?.id ? myProfile?.display_name : null);
+  return name ? 'Adicionado por ' + name : 'Autor não informado';
+}
 function openDetails(id) {
   const client = clients.find((item) => item.id === id); if (!client) return; selectedId = id;
   const state = currentStatus(client); $('detailName').textContent = client.name; $('detailContract').textContent = `Contrato ${client.contract}`;
   const equipment = client.onu || client.router ? [['ONU', client.onu || 'Não informado'], ['Roteador em comodato', client.router || 'Não informado']] : [['Equipamento', client.equipment || 'Não informado']];
   const fields = [
+    ['Origem', escapeHtml(recordOrigin(client))],
     ['Situação', `<span class="status-banner ${state === 'REGULARIZADO' ? 'green' : ''}">${escapeHtml(state)}</span>`],
     ['Data da negativação', escapeHtml(displayDate(negativeDate(client)))],
     ['Telefone', /^\+[1-9]\d{1,14}$/.test(client.phone ?? '') ? `<a href="tel:${client.phone}">${escapeHtml(client.phone)}</a>` : 'Não informado'],
@@ -392,6 +398,7 @@ function openWithdrawalDetails(id) {
   const visit = latestVisit(id);
   $('withdrawalDetailName').textContent = item.name;
   $('withdrawalDetailFields').innerHTML = [
+    ['Origem', recordOrigin(item)],
     ['Contrato SGP', item.contract_id || 'Não informado'], ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
     ['Situação', withdrawalLabels[visit?.result || 'pending']],
     ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
@@ -857,6 +864,7 @@ $('csvImportFile').addEventListener('change', async (event) => {
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
   catch (error) { showToast(`Falha na importação CSV: ${error.message}`); } finally { event.target.value = ''; }
 });
+
 
 
 
