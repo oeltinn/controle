@@ -1,5 +1,5 @@
 import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-report.js';
-import { supabase, isSupabaseConfigured } from './supabase.js';
+import { supabase, isSupabaseConfigured, setRememberSession } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
 import { disablePush, enablePush, getInbox, getPushSubscription, markNotificationRead, sendNotification, syncExistingPushSubscription, watchInbox } from './notifications.js';
@@ -104,6 +104,10 @@ async function showApp(user) {
   stopInboxWatch?.();
   stopInboxWatch = watchInbox(user.id, rows => { if (sessionUser?.id === user.id) { inbox = rows; renderNotificationInbox(); } });
   void syncExistingPushSubscription().then(updatePushSetting).catch(() => updatePushSetting(false));
+  if ('Notification' in window && 'PushManager' in window && localStorage.getItem('kontroll-push-choice') !== 'off') {
+    if (Notification.permission === 'granted') void enablePush().then(() => updatePushSetting(true)).catch(() => {});
+    else if (Notification.permission === 'default' && !sessionStorage.getItem('kontroll-push-prompt')) $('pushPermissionOverlay').classList.add('open');
+  }
   setView(sessionStorage.getItem(`kontroll-view:${user.id}`) || 'monthly');
   await refreshClients();
   showWelcome(user);
@@ -209,6 +213,14 @@ function setView(view) {
 }
 function closeMenu() { $('adminMenu').hidden=true; $('adminMenuToggle').setAttribute('aria-expanded','false'); }
 
+$('rememberSession').checked = localStorage.getItem('kontroll-remember') !== '0';
+$('pushLater').addEventListener('click', () => { sessionStorage.setItem('kontroll-push-prompt','1'); closeOverlay('pushPermissionOverlay'); });
+$('pushAllow').addEventListener('click', async () => {
+  $('pushAllow').disabled = true;
+  try { await enablePush(); localStorage.setItem('kontroll-push-choice','on'); updatePushSetting(true); closeOverlay('pushPermissionOverlay'); }
+  catch (error) { $('pushPermissionError').textContent = error.message; }
+  finally { $('pushAllow').disabled = false; }
+});
 function updatePushSetting(enabled) {
   $('notificationSettings').textContent = enabled ? 'Desativar notificações neste dispositivo' : 'Ativar notificações neste dispositivo';
 }
@@ -237,8 +249,8 @@ $('notificationSettings').addEventListener('click', async () => {
   closeMenu();
   try {
     const existing = await getPushSubscription();
-    if (existing) { await disablePush(); updatePushSetting(false); showToast('Notificações desativadas neste dispositivo.'); }
-    else { await enablePush(); updatePushSetting(true); showToast('Notificações ativadas neste dispositivo.'); }
+    if (existing) { await disablePush(); localStorage.setItem('kontroll-push-choice','off'); updatePushSetting(false); showToast('Notificações desativadas neste dispositivo.'); }
+    else { await enablePush(); localStorage.setItem('kontroll-push-choice','on'); updatePushSetting(true); showToast('Notificações ativadas neste dispositivo.'); }
   } catch (error) { showToast(error.message); }
 });
 $('composeNotification').addEventListener('click', async () => {
@@ -566,7 +578,7 @@ if (!isSupabaseConfigured) {
   document.querySelectorAll('[data-auth-view]').forEach((button) => button.addEventListener('click', () => {
     clearErrors(); $('signupForm').reset(); $('loginForm').reset(); $('recoveryForm').reset(); setAuthView(button.dataset.authView);
   }));
-  $('loginForm').addEventListener('submit', async (event) => { event.preventDefault(); clearErrors(); const { error } = await supabase.auth.signInWithPassword({ email: $('loginEmail').value.trim(), password: $('loginPassword').value }); if (error) $('loginError').textContent = error.message; });
+  $('loginForm').addEventListener('submit', async (event) => { event.preventDefault(); clearErrors(); setRememberSession($('rememberSession').checked); const { error } = await supabase.auth.signInWithPassword({ email: $('loginEmail').value.trim(), password: $('loginPassword').value }); if (error) $('loginError').textContent = error.message; });
   $('signupForm').addEventListener('submit', async (event) => {
     event.preventDefault(); clearErrors(); const { data, error } = await supabase.auth.signUp({ email: $('signupEmail').value.trim(), password: $('signupPassword').value, options: { data: { full_name: $('signupName').value.trim() }, emailRedirectTo: `${window.location.origin}/` } });
     if (error) { $('signupError').textContent = error.message; return; } if (data.session) await showApp(data.session.user); else setAuthView('login', 'Cadastro iniciado. Confira seu e-mail para confirmar a conta e depois entre.');
@@ -864,6 +876,7 @@ $('csvImportFile').addEventListener('change', async (event) => {
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
   catch (error) { showToast(`Falha na importação CSV: ${error.message}`); } finally { event.target.value = ''; }
 });
+
 
 
 
