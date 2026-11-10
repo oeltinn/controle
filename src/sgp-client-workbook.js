@@ -19,4 +19,3 @@ export function parseSgpClientRows(cells) {
     'STATUS': at(row,'STATUS'),
   })).filter(row => row['CONTRATO ID']);
 }
-

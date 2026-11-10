@@ -32,4 +32,3 @@ begin
 end $$;
 revoke all on function public.replace_sgp_client_catalog(text,jsonb) from public,anon;
 grant execute on function public.replace_sgp_client_catalog(text,jsonb) to authenticated;
-
