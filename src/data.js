@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { parseSgpClientRows } from './sgp-client-workbook.js';
 
 function unwrap(result) {
   if (result.error) throw result.error;
@@ -200,7 +201,12 @@ export async function getClientCatalogState() {
 
 export async function findClientCatalogContract(contract) {
   if (!/^\d+$/.test(contract)) return null;
-  return unwrap(await supabase.from('sgp_client_catalog').select('contract_id,name,phone,street,neighborhood,city,equipment').eq('contract_id',contract).maybeSingle());
+  return unwrap(await supabase.from('sgp_client_catalog').select('contract_id,name,phone,street,neighborhood,city,equipment,status').eq('contract_id',contract).maybeSingle());
+}
+
+export async function parseSgpClientWorkbook(file) {
+  const { readSheet } = await import('read-excel-file/browser');
+  return parseSgpClientRows(await readSheet(file));
 }
 
 export async function replaceClientCatalog(records, filename) {
@@ -212,9 +218,11 @@ export async function replaceClientCatalog(records, filename) {
     const neighborhood = byHeader(record,'BAIRRO');
     const city = normalizeWithdrawalCity(byHeader(record,'CIDADE'));
     if (!/^\d+$/.test(contract_id) || !name || !street || !neighborhood || !city) continue;
-    const phone = byHeader(record,'TELEFONE') || byHeader(record,'CELULAR') ||
+    const rawPhone = byHeader(record,'CELULARES') || byHeader(record,'TELEFONES') || byHeader(record,'TELEFONE') || byHeader(record,'CELULAR') ||
       Object.entries(record).find(([key,value])=>key.startsWith('COLUNA_VAZIA_') && /\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4}/.test(value))?.[1] || '';
-    rows.set(contract_id,{contract_id,name,phone,street,neighborhood,city,equipment:byHeader(record,'EQUIPAMENTO') || null});
+    const phone = rawPhone.match(/\(?\d{2}\)?\s*\d{4,5}[-\s]?\d{4}/)?.[0] || '';
+    const status = byHeader(record,'STATUS') || null;
+    rows.set(contract_id,{contract_id,name,phone,street,neighborhood,city,equipment:byHeader(record,'EQUIPAMENTO') || null,status});
   }
   if (!rows.size) throw new Error('Use o CSV do SGP com Contrato ID, Cliente, Endereço, Bairro e Cidade.');
   return unwrap(await supabase.rpc('replace_sgp_client_catalog',{p_filename:filename,p_rows:[...rows.values()]}));
@@ -318,6 +326,7 @@ export async function importBackup(records, userId) {
   for (let start = 0; start < rows.length; start += 100) unwrap(await supabase.from('clients').upsert(rows.slice(start, start + 100), { onConflict: 'legacy_id' }));
   return rows.length;
 }
+
 
 
 

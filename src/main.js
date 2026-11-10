@@ -4,7 +4,7 @@ import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
 import { disablePush, enablePush, getInbox, getPushSubscription, markNotificationRead, sendNotification, syncExistingPushSubscription, watchInbox } from './notifications.js';
 import { listWithdrawalEquipmentModels, normalizeWithdrawalCity } from './data.js';
-import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findClientCatalogContract, getClientCatalogState, replaceClientCatalog, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
+import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findClientCatalogContract, getClientCatalogState, replaceClientCatalog, parseSgpClientWorkbook, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
 
 const $ = (id) => document.getElementById(id);
 const catalogAgeNotice = document.createElement('p');
@@ -676,6 +676,7 @@ $('withdrawalForm').addEventListener('submit', async (event) => {
   const submit = event.submitter;
   if (submit) submit.disabled = true;
   try {
+    if (!await confirmCatalogContractStatus($('withdrawalContract').value.trim())) return;
     const phone = await readClientPhone('withdrawalPhone');
     await createWithdrawal({contract:$('withdrawalContract').value.trim(), name, phone, address, city, district, equipment:$('withdrawalEquipment').value}, sessionUser.id);
     closeOverlay('withdrawalFormOverlay');
@@ -824,14 +825,16 @@ function bindWithdrawalReview() {
     catalogType=type; $('catalogTitle').textContent=`Importar catálogo de ${type==='onu'?'ONU':'clientes'}`;
     $('catalogOnu').classList.toggle('active',type==='onu'); $('catalogClients').classList.toggle('active',type==='clients');
     $('catalogOnuHelp').hidden=type!=='onu'; $('catalogClientsHelp').hidden=type!=='clients';
+    $('equipmentCsvFile').accept=type==='onu'?'text/csv,.csv':'.xlsx,.csv,text/csv';
+    $('catalogDropPrompt').textContent=type==='onu'?'Arraste o CSV do catálogo para cá':'Arraste o XLSX do SGP ou um CSV para cá';
     $('equipmentCsvFile').value=''; choose(null);
   };
   const drop=$('catalogDrop');
   const confirm=$('confirmCatalog');
   const choose=file=>{
-    catalogFile=file && /\.csv$/i.test(file.name) ? file : null;
+    catalogFile=file && (catalogType==='onu' ? /\.csv$/i : /\.(xlsx|csv)$/i).test(file.name) ? file : null;
     $('catalogSelection').textContent=catalogFile?.name || '';
-    $('catalogError').textContent=file && !catalogFile ? 'Selecione um arquivo CSV.' : '';
+    $('catalogError').textContent=file && !catalogFile ? (catalogType==='onu'?'Selecione um arquivo CSV.':'Selecione um arquivo XLSX ou CSV.') : '';
     confirm.disabled=!catalogFile;
   };
   $('catalogOnu').addEventListener('click',()=>selectCatalogType('onu'));
@@ -858,13 +861,15 @@ function bindWithdrawalReview() {
     $('equipmentCsvFile').disabled=true;
     $('catalogError').textContent='';
     try {
-      const bytes=await file.arrayBuffer();
       let content;
-      try {content=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
-      catch {content=new TextDecoder('windows-1252').decode(bytes);}
+      if (/\.csv$/i.test(file.name)) {
+        const bytes=await file.arrayBuffer();
+        try {content=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
+        catch {content=new TextDecoder('windows-1252').decode(bytes);}
+      }
       const count=catalogType==='onu'
         ? await importContractEquipment(parseCsv(content,{equipmentCatalog:true}))
-        : await replaceClientCatalog(parseCsv(content,{clientCatalog:true}),file.name);
+        : await replaceClientCatalog(/\.xlsx$/i.test(file.name) ? await parseSgpClientWorkbook(file) : parseCsv(content,{clientCatalog:true}),file.name);
       closeOverlay('catalogOverlay');
       choose(null);
       await refreshWithdrawals();
@@ -889,7 +894,7 @@ async function suggestClientCatalog(contract, type) {
     const row = await findClientCatalogContract(contract);
     if ($(type === 'client' ? 'contract' : 'withdrawalContract').value.trim() !== contract) return;
     if (!row) { error.textContent = `Contrato ${contract} não encontrado no catálogo de clientes.`; return; }
-    error.textContent = '';
+    error.textContent = row.status && !['ATIVO','SUSPENSO'].includes(row.status.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()) ? `Atenção: este contrato consta como ${row.status}. Você precisará confirmar antes de salvar.` : '';
     if (!window.confirm(`Contrato ${contract} encontrado para ${row.name}. Preencher os dados deste cliente?`)) return;
     const equipment = row.equipment || await findContractEquipment(contract).catch(()=>null);
     if (type === 'client') {
@@ -914,10 +919,17 @@ async function suggestClientCatalog(contract, type) {
 }
 $('contract').addEventListener('change',event=>void suggestClientCatalog(event.target.value.trim(),'client'));
 $('withdrawalContract').addEventListener('change',event=>void suggestClientCatalog(event.target.value.trim(),'withdrawal'));
+async function confirmCatalogContractStatus(contract) {
+  if (!/^\d+$/.test(contract)) return true;
+  const row = await findClientCatalogContract(contract);
+  if (!row?.status) return true;
+  const normalized = row.status.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+  return ['ATIVO','SUSPENSO'].includes(normalized) || window.confirm(`Tem certeza? Esse contrato consta como ${row.status}.`);
+}
 $('clientForm').addEventListener('submit', async (event) => {
   event.preventDefault(); $('formError').textContent = ''; if (!$('clientForm').reportValidity()) return;
   if (catalogExpired()) { $('formError').textContent='Catálogo vencido. Peça ao administrador uma nova planilha.'; return; }
-  try { const phone = await readClientPhone(); await createClientRecord({ phone, name: $('clientName').value, contract: $('contract').value, street: $('street').value, neighborhood: $('neighborhood').value, city: $('city').value, onu: $('onu').value, router: $('routerEnabled').checked ? $('routerModel').value : '' }, sessionUser.id); closeOverlay('formOverlay'); await refreshClients(); showToast('Cliente cadastrado como negativado.'); }
+  try { if (!await confirmCatalogContractStatus($('contract').value.trim())) return; const phone = await readClientPhone(); await createClientRecord({ phone, name: $('clientName').value, contract: $('contract').value, street: $('street').value, neighborhood: $('neighborhood').value, city: $('city').value, onu: $('onu').value, router: $('routerEnabled').checked ? $('routerModel').value : '' }, sessionUser.id); closeOverlay('formOverlay'); await refreshClients(); showToast('Cliente cadastrado como negativado.'); }
   catch (error) { $('formError').textContent = error.message; }
 });
 $('resolveSave').addEventListener('click', async () => {
@@ -942,6 +954,7 @@ $('csvImportFile').addEventListener('change', async (event) => {
   try { const records = parseCsv(await file.text()); const result = await importCsv(records, sessionUser.id); await refreshClients(); showToast(`${result.imported} importados/atualizados; ${result.skipped} linha(s) incompleta(s) ignorada(s).`); }
   catch (error) { showToast(`Falha na importação CSV: ${error.message}`); } finally { event.target.value = ''; }
 });
+
 
 
 
