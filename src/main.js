@@ -715,7 +715,7 @@ $('withdrawalContract').addEventListener('change', async (event) => {
   const contract = field.value.trim();
   const hint = $('withdrawalEquipmentHint');
   hint.textContent = 'Deixe em branco para usar o equipamento vinculado ao contrato.';
-  if (!/^\d+$/.test(contract)) return;
+  if (!/^\d+$/.test(contract)) { error.textContent='Informe um ID de contrato numérico para consultar o catálogo.'; return; }
   try {
     const equipment = await findContractEquipment(contract);
     if (field.value.trim() === contract) hint.textContent = equipment ? `Equipamento encontrado no catálogo: ${equipment}` : 'Equipamento ainda não identificado para este contrato.';
@@ -895,7 +895,10 @@ async function suggestClientCatalog(contract, type) {
     if (type === 'client') {
       $('clientName').value=row.name; $('street').value=row.street;
       $('neighborhood').value=row.neighborhood; $('city').value=row.city;
-      if (equipment && [...$('onu').options].some(o=>o.value===equipment)) $('onu').value=equipment;
+      if (equipment) {
+        if (![...$('onu').options].some(o=>o.value===equipment)) $('onu').add(new Option(equipment,equipment));
+        $('onu').value=equipment;
+      }
     } else {
       $('withdrawalName').value=row.name; $('withdrawalAddress').value=row.street;
       $('withdrawalDistrict').value=row.neighborhood; $('withdrawalCity').value=row.city;
