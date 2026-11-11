@@ -29,6 +29,7 @@ export function startRefraction() {
     !preferences.some(query => query.matches) &&
     !document.documentElement.hasAttribute('data-iphone-keyboard') &&
     nav.getBoundingClientRect().width > 0 && !shell.hidden &&
+    !document.querySelector('.admin-menu:not([hidden])') &&
     !document.querySelector('.overlay.open');
 
   const rebuild = () => {
@@ -93,6 +94,10 @@ export function startRefraction() {
   for (const overlay of document.querySelectorAll('.overlay')) {
     new MutationObserver(schedule).observe(overlay, { attributes: true, attributeFilter: ['class'] });
   }
+  const profileMenu = document.querySelector('#adminMenu');
+  if (profileMenu) new MutationObserver(schedule).observe(profileMenu, {
+    attributes: true, attributeFilter: ['hidden'],
+  });
   for (const query of preferences) query.addEventListener('change', schedule);
   document.addEventListener('visibilitychange', schedule);
   document.addEventListener('kontroll-glass-change', schedule);

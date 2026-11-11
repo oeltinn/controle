@@ -93,11 +93,11 @@ function addGlassControl() {
     document.body.style.setProperty('--ios-glass', `rgba(${dark ? '16, 43, 34' : '244, 255, 249'}, ${opacity.toFixed(2)})`);
     document.body.style.setProperty('--ios-sheet', `rgba(${dark ? '20, 42, 35' : '247, 255, 251'}, ${(.94 - liquid * .35).toFixed(2)})`);
     document.documentElement.style.setProperty('--ios-liquid-level', slider.value);
-    document.dispatchEvent(new Event('kontroll-glass-change'));
   };
   slider.addEventListener('input', apply);
   slider.addEventListener('change', () => {
     try { localStorage.setItem('kontroll.iphoneGlass', slider.value); } catch { /* Private browsing */ }
+    document.dispatchEvent(new Event('kontroll-glass-change'));
   });
   new MutationObserver(apply).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
   apply();
@@ -125,6 +125,11 @@ function prepareProfileSheet() {
     bell.click();
   });
   menu.querySelector('.mobile-account').after(notifications);
+  const options = document.createElement('div');
+  options.className = 'iphone-profile-options';
+  notifications.before(options);
+  options.append(notifications, menu.querySelector('#openCatalog'),
+    menu.querySelector('#openImports'), menu.querySelector('#manageUsersBtn'));
   const badge = document.querySelector('#notificationBadge');
   const updateCount = () => {
     const count = badge.hidden ? '' : badge.textContent;
