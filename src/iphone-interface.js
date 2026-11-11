@@ -5,6 +5,8 @@ const icons = {
 };
 
 function iphoneMaterial() {
+  // Local visual QA only; Vite removes this override from preview builds.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('iphoneGlassTest')) return 'glass';
   const { userAgent, platform, maxTouchPoints } = navigator;
   const iphone = /\biPhone\b/i.test(userAgent) || platform === 'iPhone';
   if (!iphone || maxTouchPoints < 1 || /\biPad\b|Android|Windows/i.test(userAgent)) return null;
@@ -65,17 +67,6 @@ function addNavigationLens() {
   schedule();
 }
 
-function trackGlassTouch() {
-  document.addEventListener('pointerdown', event => {
-    const surface = event.target.closest?.('.header-nav, .admin-menu, .overlay .dialog, .auth-card, .top-actions button');
-    if (!surface) return;
-    const bounds = surface.getBoundingClientRect();
-    if (!bounds.width || !bounds.height) return;
-    surface.style.setProperty('--glint-x', `${100 * (event.clientX - bounds.left) / bounds.width}%`);
-    surface.style.setProperty('--glint-y', `${100 * (event.clientY - bounds.top) / bounds.height}%`);
-  }, { passive: true });
-}
-
 function observeKeyboard(root) {
   const viewport = window.visualViewport;
   if (!viewport) return;
@@ -104,7 +95,8 @@ if (material) {
     root.dataset.kontrollIphone = material;
     if (material === 'glass') {
       addNavigationLens();
-      trackGlassTouch();
+      import('./iphone-refraction.js').then(({ startRefraction }) => startRefraction())
+        .catch(error => console.warn('Refração indisponível; usando transparência CSS.', error));
     }
     observeKeyboard(root);
   }).catch(error => console.warn('Interface do iPhone indisponível:', error));
