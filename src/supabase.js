@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+export const isDemoPreview = url === 'https://kontroll-preview.invalid' && publishableKey === 'preview-no-backend';
 
 const preferenceKey = 'kontroll-remember';
 export function setRememberSession(remember) {
@@ -17,7 +18,7 @@ const sessionStorageAdapter = {
   removeItem(key) { localStorage.removeItem(key); sessionStorage.removeItem(key); },
 };
 
-export const isSupabaseConfigured = Boolean(url && publishableKey);
+export const isSupabaseConfigured = !isDemoPreview && Boolean(url && publishableKey);
 export const supabase = isSupabaseConfigured
   ? createClient(url, publishableKey, {
       auth: {

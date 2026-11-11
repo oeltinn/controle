@@ -1,6 +1,7 @@
 import { printReport } from './print-report.js';
 import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-report.js';
-import { supabase, isSupabaseConfigured, setRememberSession } from './supabase.js';
+import { supabase, isSupabaseConfigured, isDemoPreview, setRememberSession } from './supabase.js';
+import { previewData } from './preview-data.js';
 import { renderRecoveryReport } from './recovery-report.js';
 import { initializeClientPhone, readClientPhone } from './client-phone.js';
 import { disablePush, enablePush, getInbox, getPushSubscription, markNotificationRead, sendNotification, syncExistingPushSubscription, watchInbox } from './notifications.js';
@@ -93,7 +94,7 @@ async function showApp(user) {
   sessionUser = user; $('authShell').hidden = true; $('appShell').hidden = true;
   $('logoutButton').hidden = false; role = 'pending';
   try {
-    const profile = await getMyProfile(user.id);
+    const profile = isDemoPreview ? { role: 'admin', display_name: 'Demonstração' } : await getMyProfile(user.id);
     if (revision !== authRevision) return;
     myProfile = profile; role = myProfile?.role || 'pending';
   } catch (error) { showToast(`Não foi possível consultar o perfil: ${error.message}`); }
@@ -120,6 +121,20 @@ async function showApp(user) {
   $('clientTools').hidden = role === 'technician';
   $('authShell').hidden = true; $('appShell').hidden = false;
   $('notificationBell').hidden = false;
+  if (isDemoPreview) {
+    const data = previewData();
+    clients = data.clients;
+    withdrawals = data.withdrawals;
+    withdrawalVisits = data.visits;
+    inbox = [{ read_at: new Date().toISOString(), app_notifications: { title: 'Ambiente de demonstração', body: 'Os registros deste preview são fictícios.' } }];
+    renderNotificationInbox();
+    renderClients();
+    renderReports();
+    renderWithdrawals();
+    renderNoAnswerVisits();
+    setView(sessionStorage.getItem(`kontroll-view:${user.id}`) || 'monthly');
+    return;
+  }
   void refreshClientCatalogState().catch(() => {});
   stopInboxWatch?.();
   stopInboxWatch = watchInbox(user.id, rows => { if (sessionUser?.id === user.id) { inbox = rows; renderNotificationInbox(); } });
@@ -133,7 +148,7 @@ async function showApp(user) {
   showWelcome(user);
 }
 async function refreshClients() {
-  if (!sessionUser) return;
+  if (!sessionUser || isDemoPreview) return;
   if (role === 'technician') {
     try { clients = []; [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
     catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
@@ -258,6 +273,7 @@ function renderNotificationInbox() {
 }
 $('notificationBell').addEventListener('click', async () => {
   $('notificationsOverlay').classList.add('open');
+  if (isDemoPreview) return;
   void getPushSubscription().then(subscription => updatePushSetting(Boolean(subscription))).catch(() => {});
   try { inbox = await getInbox(sessionUser.id); renderNotificationInbox(); }
   catch (error) { showToast(`Não foi possível carregar notificações: ${error.message}`); }
@@ -424,7 +440,7 @@ function renderNoAnswerVisits() {
   }).join('') : '<div class="empty">Nenhum registro de visita sem contato.</div>';
 }
 async function refreshWithdrawals() {
-  if (!sessionUser || !['admin','operator','technician','attendant'].includes(role)) return;
+  if (isDemoPreview || !sessionUser || !['admin','operator','technician','attendant'].includes(role)) return;
   try { [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
   catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
 }
@@ -620,7 +636,31 @@ document.addEventListener('change', async (event) => {
   }
 });
 
-if (!isSupabaseConfigured) {
+if (isDemoPreview) {
+  const showDemoEntry = () => {
+    setAuthView('login', 'Preview com dados fictícios. Entre sem e-mail ou senha.');
+    $('loginForm').hidden = true;
+    entry.hidden = false;
+  };
+  const entry = document.createElement('button');
+  entry.type = 'button';
+  entry.className = 'primary';
+  entry.textContent = 'Entrar na demonstração';
+  $('loginForm').after(entry);
+  entry.addEventListener('click', () => void showApp({ id: 'kontroll-preview', email: 'demo@example.invalid' }));
+  $('logoutButton').addEventListener('click', async () => {
+    await showApp(null);
+    showDemoEntry();
+  });
+  document.addEventListener('submit', event => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    showToast('Demonstração: alterações e envios estão desativados.');
+  }, true);
+  $('notificationSettings').disabled = true;
+  $('composeNotification').disabled = true;
+  showDemoEntry();
+} else if (!isSupabaseConfigured) {
   setAuthView('login', 'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY para conectar este site.');
   for (const form of document.querySelectorAll('#authShell form')) form.querySelectorAll('input,button[type="submit"]').forEach((control) => { control.disabled = true; });
 } else {
