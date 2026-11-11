@@ -1,3 +1,17 @@
+@font-face {
+  font-family: 'Plus Jakarta Sans Kontroll';
+  src: url('/fonts/plus-jakarta-sans-variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans Kontroll';
+  src: url('/fonts/plus-jakarta-sans-italic-variable.ttf') format('truetype');
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+}
 @media screen {
   html[data-kontroll-iphone] {
     --ios-top: env(safe-area-inset-top, 0px);
@@ -18,7 +32,11 @@
     --ios-tint: #d1eee5;
     --ios-shadow: 0 12px 36px #12453d26, 0 2px 8px #12453d12;
     background: radial-gradient(ellipse at 86% 0, var(--ios-ambient), transparent 38rem), var(--ios-canvas);
-    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans Kontroll', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.48;
+    font-optical-sizing: auto;
+    font-synthesis: none;
   }
 
   [data-kontroll-iphone] body[data-theme="dark"] {
@@ -313,6 +331,18 @@
     box-shadow: var(--ios-shadow);
   }
   [data-kontroll-iphone] :is(.heading h1, .auth-card h1) { letter-spacing: -.04em; }
+  [data-kontroll-iphone] :is(.heading h1, .auth-card h1) {
+    font-weight: 700;
+    line-height: 1.14;
+  }
+  [data-kontroll-iphone] :is(.panel h2, .admin-menu .iphone-profile-heading, .dialog-head h2) {
+    letter-spacing: -.025em;
+    line-height: 1.24;
+  }
+  [data-kontroll-iphone] :is(.subtle, .hint, .heading p, .iphone-glass-ends) {
+    letter-spacing: 0;
+    line-height: 1.5;
+  }
   [data-kontroll-iphone] :is(.panel, .summary-card, .month-card, .withdrawal-card, .notification-item) {
     border-radius: 22px;
   }
