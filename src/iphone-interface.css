@@ -245,15 +245,38 @@
   }
   [data-kontroll-iphone] .iphone-profile-heading span { flex: 1; }
   [data-kontroll-iphone] .admin-menu .iphone-profile-heading button {
-    width: 42px;
-    height: 42px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
     border-radius: 50%;
     background: var(--paper);
     color: var(--ink);
-    text-align: center;
-    font-size: 28px;
-    line-height: 1;
+    line-height: 0;
   }
+  [data-kontroll-iphone] .admin-menu .iphone-profile-heading button svg { display: block; }
+  [data-kontroll-iphone="glass"] .admin-menu .iphone-profile-heading button {
+    position: relative;
+    overflow: hidden;
+    background: var(--ios-glass);
+    border: 1px solid var(--ios-rim);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    backdrop-filter: blur(12px) saturate(150%);
+    box-shadow: 0 6px 18px #0002, inset 0 1px 0 #fff5;
+  }
+  [data-kontroll-iphone="glass"] .admin-menu .iphone-profile-heading button::before {
+    content: '';
+    position: absolute;
+    inset: 1px 4px 51% 4px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #fff4, transparent);
+    pointer-events: none;
+  }
+  [data-kontroll-iphone="glass"] .admin-menu .iphone-profile-heading button svg { position: relative; }
   [data-kontroll-iphone] .notification-bell { display: none !important; }
   [data-kontroll-iphone] #adminMenuToggle { position: relative; }
   [data-kontroll-iphone] .iphone-profile-badge {

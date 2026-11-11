@@ -110,7 +110,7 @@ function prepareProfileSheet() {
   if (!menu || !toggle || !bell) return;
   const heading = document.createElement('div');
   heading.className = 'iphone-profile-heading';
-  heading.innerHTML = '<img src="/kontroll-mark.png" alt=""><span>Minha conta</span><button type="button" aria-label="Fechar perfil">×</button>';
+  heading.innerHTML = '<img src="/kontroll-mark.png" alt=""><span>Minha conta</span><button type="button" aria-label="Fechar perfil"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M5 5l14 14M19 5 5 19"/></svg></button>';
   heading.querySelector('button').addEventListener('click', () => toggle.click());
   menu.prepend(heading);
   toggle.innerHTML = '<svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c.4-4 3-6 7.5-6s7.1 2 7.5 6"/></svg><span class="iphone-profile-badge" hidden></span>';
