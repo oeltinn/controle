@@ -168,7 +168,7 @@ if (material) {
     const root = document.documentElement;
     prepareNavigation();
     const viewport = document.querySelector('meta[name="viewport"]');
-    if (viewport) viewport.content += ', viewport-fit=cover';
+    if (viewport && !viewport.content.includes('viewport-fit=cover')) viewport.content += ', viewport-fit=cover';
     root.dataset.kontrollIphone = material;
     prepareProfileSheet();
     if (material === 'glass') {

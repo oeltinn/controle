@@ -1,5 +1,13 @@
 # Controle FibraCenter — versão online
 
+## Instalar no iPhone
+
+No Safari, abra o endereço do Kontroll, toque em **Compartilhar → Adicionar à Tela de Início** e confirme. Abra o novo ícone na Tela de Início. O app usa `display: standalone`, sem a barra do Safari, e mantém as áreas seguras do aparelho. A tela inicial usa o ícone PNG da marca; quando o iOS não oferece uma imagem de abertura específica para o tamanho do aparelho, ele usa a apresentação padrão do sistema.
+
+O Service Worker `public/push-sw.js` também atende às notificações existentes. Ele guarda apenas fontes, imagens e arquivos estáticos do aplicativo. Sem internet, a abertura mostra `public/offline.html` e pede reconexão; dados de clientes, respostas do Supabase e credenciais não são armazenados no cache. Login, validação da sessão, consultas e alterações continuam exigindo conexão. Quando houver versão nova, um aviso permite atualizar no momento escolhido pelo usuário.
+
+Para testar: use HTTPS na publicação, instale pelo Safari, confirme que o ícone abre sem barra do navegador, confira a área superior e inferior em iPhones com Dynamic Island, desligue a conexão e reabra para conferir a tela offline, depois reconecte. Publicar uma nova versão do Service Worker deve mostrar o aviso de atualização. O navegador de desktop não reproduz por completo a instalação e as áreas seguras do iOS.
+
 ## O que existe no projeto
 
 A versão anterior era um único arquivo HTML, com CSS e JavaScript embutidos, sem framework, servidor ou banco. A lista era guardada no `localStorage` do navegador. A versão autônoma continua em `../controle-clientes-serasa.html`.
