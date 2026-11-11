@@ -11,11 +11,10 @@
   [data-kontroll-iphone] body {
     --ios-ambient: #d9f0e9;
     --ios-canvas: #f5faf8;
-    --ios-glass: #f4fff97a;
-    --ios-sheet: #f7fffbc9;
-    --ios-lens: #e9fff4a1;
-    --ios-glint: #ffffffcb;
-    --ios-rim: #fff;
+    --ios-glass: #f4fff938;
+    --ios-sheet: #f7fffb9c;
+    --ios-lens: #b6e4d54a;
+    --ios-rim: #ffffff66;
     --ios-tint: #d1eee5;
     --ios-shadow: 0 12px 36px #12453d26, 0 2px 8px #12453d12;
     background: radial-gradient(ellipse at 86% 0, var(--ios-ambient), transparent 38rem), var(--ios-canvas);
@@ -25,10 +24,9 @@
   [data-kontroll-iphone] body[data-theme="dark"] {
     --ios-ambient: #1b3b33;
     --ios-canvas: #101c19;
-    --ios-glass: #102b2294;
-    --ios-sheet: #142a23d9;
-    --ios-lens: #8cf4d333;
-    --ios-glint: #d6fff366;
+    --ios-glass: #102b2247;
+    --ios-sheet: #142a239c;
+    --ios-lens: #8cf4d31c;
     --ios-rim: #ffffff35;
     --ios-tint: #285549;
     --ios-shadow: 0 14px 42px #0007, 0 2px 8px #0004;
@@ -58,21 +56,18 @@
   [data-kontroll-iphone] :is(.header-nav, .admin-menu, .overlay .dialog) {
     background: var(--paper);
     border: 1px solid var(--line);
-    box-shadow: inset 0 1px 0 var(--ios-rim), var(--ios-shadow);
+    box-shadow: var(--ios-shadow);
   }
 
   [data-kontroll-iphone="glass"] :is(.header-nav, .admin-menu, .overlay .dialog, .auth-card, .top-actions button, .toast) {
-    background:
-      radial-gradient(ellipse at var(--glint-x, 22%) var(--glint-y, 0%), var(--ios-glint), transparent 52%),
-      linear-gradient(155deg, #ffffff20, transparent 44%, #65dcbb1f),
-      var(--ios-glass);
+    background: var(--ios-glass);
     border: 1px solid var(--ios-rim);
-    box-shadow: inset 0 1px 1px #ffffffb0, inset 0 -1px 3px #2ab69e38, var(--ios-shadow);
+    box-shadow: var(--ios-shadow);
   }
 
   [data-kontroll-iphone="glass"] :is(.header-nav, .admin-menu, .overlay .dialog, .auth-card, .toast) {
-    -webkit-backdrop-filter: blur(10px) saturate(172%);
-    backdrop-filter: blur(10px) saturate(172%);
+    -webkit-backdrop-filter: blur(7px) saturate(135%);
+    backdrop-filter: blur(7px) saturate(135%);
   }
 
   [data-kontroll-iphone="glass"] :is(.overlay .dialog, .auth-card) {
@@ -112,7 +107,7 @@
     line-height: 1.2;
     white-space: normal;
     position: relative;
-    z-index: 1;
+    z-index: 3;
   }
   [data-kontroll-iphone] .header-nav .view-tab svg { width: 21px; height: 21px; flex: none; }
   [data-kontroll-iphone] body .header-nav .view-tab[aria-current="page"] {
@@ -132,9 +127,23 @@
     border-radius: 27px;
     pointer-events: none;
     transform: translateX(var(--lens-x, 0px));
-    background: radial-gradient(ellipse at 28% 0%, var(--ios-glint), transparent 65%), var(--ios-lens);
-    box-shadow: inset 0 1px 2px var(--ios-rim), inset 0 -2px 4px #4cccb657, 0 2px 7px #0e4c3926;
+    z-index: 2;
+    background: var(--ios-lens);
+    border: 1px solid var(--ios-rim);
+    box-shadow: 0 2px 6px #0e4c3912;
     transition: transform 360ms cubic-bezier(.2, .85, .25, 1.16), width 280ms ease;
+  }
+  [data-kontroll-iphone="glass"] .iphone-refraction-pane {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    z-index: 5;
+    pointer-events: none;
+  }
+  [data-kontroll-iphone="glass"] .header-nav[data-refraction-ready] {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   [data-kontroll-iphone][data-iphone-keyboard] .header-nav:not([hidden]) { display: none !important; }
 
@@ -149,7 +158,7 @@
   }
   [data-kontroll-iphone] .auth-card {
     border-radius: 34px;
-    box-shadow: inset 0 1px 0 var(--ios-rim), var(--ios-shadow);
+    box-shadow: var(--ios-shadow);
   }
   [data-kontroll-iphone] :is(.heading h1, .auth-card h1) { letter-spacing: -.04em; }
   [data-kontroll-iphone] :is(.panel, .summary-card, .month-card, .withdrawal-card, .notification-item) {
@@ -190,7 +199,9 @@
   }
   [data-kontroll-iphone] .overlay .dialog-head { background: var(--paper); }
   [data-kontroll-iphone="glass"] .overlay .dialog-head {
-    background: linear-gradient(var(--paper) 20%, var(--ios-sheet));
+    background: var(--ios-sheet);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
   [data-kontroll-iphone] .overlay.open .dialog { animation: iphone-sheet-in 220ms cubic-bezier(.2, .75, .3, 1) both; }
   [data-kontroll-iphone] .toast { bottom: calc(82px + var(--ios-bottom)); }
