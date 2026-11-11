@@ -22,8 +22,11 @@
   }
 
   [data-kontroll-iphone] body[data-theme="dark"] {
-    --ios-ambient: #1b3b33;
-    --ios-canvas: #101c19;
+    --ios-ambient: #242628;
+    --ios-canvas: #101012;
+    --paper: #242426;
+    --bg: #101012;
+    --line: #39393b;
     --ios-glass: #102b2247;
     --ios-sheet: #142a239c;
     --ios-lens: #8cf4d31c;
@@ -41,6 +44,7 @@
     background: var(--ios-canvas);
     border-bottom: 1px solid var(--line);
   }
+  [data-kontroll-iphone] body[data-theme="dark"] .topbar { background: #101c19; }
 
   [data-kontroll-iphone] body[data-auth="true"] .topbar { display: none; }
   [data-kontroll-iphone] .wrap {
@@ -162,6 +166,13 @@
     background: var(--ios-canvas);
   }
   [data-kontroll-iphone] .admin-menu[hidden] { display: none; }
+  [data-kontroll-iphone] .admin-menu:not([hidden]) {
+    animation: iphone-profile-rise 360ms cubic-bezier(.2,.8,.25,1) both;
+  }
+  @keyframes iphone-profile-rise {
+    from { transform: translateY(100%); opacity: .9; }
+    to { transform: translateY(0); opacity: 1; }
+  }
   [data-kontroll-iphone] body:has(.admin-menu:not([hidden])) .header-nav { visibility: hidden; }
   [data-kontroll-iphone] .top-actions:has(.admin-menu:not([hidden])) { z-index: 200; }
   [data-kontroll-iphone] .iphone-profile-heading {
@@ -205,7 +216,7 @@
     border: 0;
     border-radius: 24px;
     padding: 18px;
-    margin: 12px 0 16px;
+    margin: 12px 0 20px;
   }
   [data-kontroll-iphone] .admin-menu .iphone-notifications-link {
     display: flex;
@@ -216,9 +227,34 @@
   [data-kontroll-iphone] .iphone-notifications-link span:first-child { flex: 1; }
   [data-kontroll-iphone] .iphone-notifications-link span:last-child { color: var(--muted); font-size: 24px; }
   [data-kontroll-iphone] .iphone-notifications-count { color: var(--green); font-size: 13px; }
+  [data-kontroll-iphone] .admin-menu .iphone-profile-options {
+    display: flex;
+    flex-direction: column;
+    background: var(--paper);
+    border-radius: 24px;
+    padding: 2px 16px;
+    box-shadow: 0 5px 18px #0000000b;
+    overflow: hidden;
+  }
+  [data-kontroll-iphone] .admin-menu .iphone-profile-options > button {
+    flex: none;
+    min-height: 54px;
+    padding: 12px 4px;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+  }
+  [data-kontroll-iphone] .admin-menu .iphone-profile-options > button + button {
+    border-top: 1px solid var(--line) !important;
+  }
+  [data-kontroll-iphone] .admin-menu .iphone-profile-options > button[hidden] { display: none; }
+  [data-kontroll-iphone] body[data-theme="dark"] .admin-menu .iphone-profile-options {
+    box-shadow: 0 5px 18px #0002;
+  }
   [data-kontroll-iphone] .admin-menu #mobileThemeToggle {
-    margin-top: 18px;
-    border-top: 1px solid var(--line);
+    margin-top: 24px;
+    border: 0;
   }
   [data-kontroll-iphone] .admin-menu .mobile-menu-items {
     display: flex;
