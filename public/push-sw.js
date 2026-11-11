@@ -1,7 +1,10 @@
 // The push worker also provides a safe offline shell for the installed app.
-const CACHE = 'kontroll-static-v1';
+const CACHE = 'kontroll-static-v2';
 const OFFLINE = '/offline.html';
+const iphoneSafari = /\biPhone\b/i.test(self.navigator.userAgent) && /Safari\//i.test(self.navigator.userAgent) &&
+  !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA/i.test(self.navigator.userAgent);
 self.addEventListener('install', event => {
+  if (!iphoneSafari) return;
   event.waitUntil(caches.open(CACHE).then(cache => Promise.allSettled(
     [OFFLINE, '/kontroll-mark.png', '/manifest.webmanifest'].map(path => cache.add(path))
   )));
@@ -16,6 +19,7 @@ self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 self.addEventListener('fetch', event => {
+  if (!iphoneSafari) return;
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
