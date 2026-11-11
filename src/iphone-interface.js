@@ -31,6 +31,51 @@ function prepareNavigation() {
   }
 }
 
+function addNavigationLens() {
+  const nav = document.querySelector('.header-nav');
+  if (!nav) return;
+  const lens = document.createElement('span');
+  lens.className = 'iphone-nav-lens';
+  lens.setAttribute('aria-hidden', 'true');
+  nav.prepend(lens);
+
+  const align = () => {
+    const selected = nav.querySelector('[aria-current="page"]:not([hidden])');
+    const visible = selected && selected.offsetWidth > 0;
+    if (lens.hidden === visible) lens.hidden = !visible;
+    if (!visible) return;
+    lens.style.setProperty('--lens-x', `${selected.offsetLeft}px`);
+    lens.style.setProperty('--lens-width', `${selected.offsetWidth}px`);
+  };
+  let frame = 0;
+  const schedule = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      align();
+    });
+  };
+  new MutationObserver(schedule).observe(nav, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['aria-current', 'hidden'],
+  });
+  if ('ResizeObserver' in window) new ResizeObserver(schedule).observe(nav);
+  window.addEventListener('resize', schedule, { passive: true });
+  schedule();
+}
+
+function trackGlassTouch() {
+  document.addEventListener('pointerdown', event => {
+    const surface = event.target.closest?.('.header-nav, .admin-menu, .overlay .dialog, .auth-card, .top-actions button');
+    if (!surface) return;
+    const bounds = surface.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    surface.style.setProperty('--glint-x', `${100 * (event.clientX - bounds.left) / bounds.width}%`);
+    surface.style.setProperty('--glint-y', `${100 * (event.clientY - bounds.top) / bounds.height}%`);
+  }, { passive: true });
+}
+
 function observeKeyboard(root) {
   const viewport = window.visualViewport;
   if (!viewport) return;
@@ -57,6 +102,10 @@ if (material) {
     const viewport = document.querySelector('meta[name="viewport"]');
     if (viewport) viewport.content += ', viewport-fit=cover';
     root.dataset.kontrollIphone = material;
+    if (material === 'glass') {
+      addNavigationLens();
+      trackGlassTouch();
+    }
     observeKeyboard(root);
   }).catch(error => console.warn('Interface do iPhone indisponível:', error));
 }
