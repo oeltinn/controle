@@ -148,15 +148,78 @@
   [data-kontroll-iphone][data-iphone-keyboard] .header-nav:not([hidden]) { display: none !important; }
 
   [data-kontroll-iphone] .admin-menu {
-    max-height: calc(100dvh - 85px - var(--ios-top) - var(--ios-bottom));
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-height: 100dvh;
     overflow: auto;
-    border-radius: 24px;
+    border-radius: 0;
     display: flex;
     flex-direction: column;
-    gap: 9px;
-    padding: 12px;
+    gap: 16px;
+    padding: calc(18px + var(--ios-top)) max(20px, var(--ios-right)) calc(28px + var(--ios-bottom)) max(20px, var(--ios-left));
+    z-index: 200;
+    background: var(--ios-canvas);
   }
   [data-kontroll-iphone] .admin-menu[hidden] { display: none; }
+  [data-kontroll-iphone] body:has(.admin-menu:not([hidden])) .header-nav { visibility: hidden; }
+  [data-kontroll-iphone] .top-actions:has(.admin-menu:not([hidden])) { z-index: 200; }
+  [data-kontroll-iphone] .iphone-profile-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 56px;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  [data-kontroll-iphone] .admin-menu .iphone-profile-heading button {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--paper);
+    color: var(--ink);
+    text-align: center;
+    font-size: 28px;
+    line-height: 1;
+  }
+  [data-kontroll-iphone] .notification-bell { display: none !important; }
+  [data-kontroll-iphone] #adminMenuToggle { position: relative; }
+  [data-kontroll-iphone] .iphone-profile-badge {
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: 99px;
+    background: var(--red);
+    color: white;
+    font-size: 10px;
+    line-height: 16px;
+  }
+  [data-kontroll-iphone] .iphone-profile-badge[hidden],
+  [data-kontroll-iphone] .iphone-notifications-count[hidden] { display: none; }
+  [data-kontroll-iphone] .admin-menu .mobile-menu-items { display: none !important; }
+  [data-kontroll-iphone] .admin-menu .mobile-account {
+    background: var(--paper);
+    border: 0;
+    border-radius: 24px;
+    padding: 18px;
+    margin: 12px 0 16px;
+  }
+  [data-kontroll-iphone] .admin-menu .iphone-notifications-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+  }
+  [data-kontroll-iphone] .iphone-notifications-link span:first-child { flex: 1; }
+  [data-kontroll-iphone] .iphone-notifications-link span:last-child { color: var(--muted); font-size: 24px; }
+  [data-kontroll-iphone] .iphone-notifications-count { color: var(--green); font-size: 13px; }
+  [data-kontroll-iphone] .admin-menu #mobileThemeToggle {
+    margin-top: 18px;
+    border-top: 1px solid var(--line);
+  }
   [data-kontroll-iphone] .admin-menu .mobile-menu-items {
     display: flex;
     flex-direction: column;
@@ -167,10 +230,15 @@
     min-height: 44px;
     border-radius: 16px;
   }
-  [data-kontroll-iphone="glass"] .admin-menu > button,
-  [data-kontroll-iphone="glass"] .admin-menu .mobile-menu-items button {
-    background: var(--ios-glass);
-    border: 1px solid var(--ios-rim);
+  [data-kontroll-iphone="glass"] .admin-menu {
+    background: var(--ios-canvas);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+  [data-kontroll-iphone="glass"] .admin-menu > button {
+    background: var(--paper);
+    border: 1px solid var(--line);
   }
   [data-kontroll-iphone="glass"] .admin-menu .mobile-menu-items button.active {
     background: var(--ios-lens);
@@ -186,6 +254,7 @@
     font-weight: 650;
   }
   [data-kontroll-iphone="glass"] .iphone-glass-setting { background: var(--ios-glass); }
+  [data-kontroll-iphone] #profileOverlay .iphone-glass-setting { margin: 16px; }
   [data-kontroll-iphone] .iphone-glass-setting input {
     width: 100%;
     min-height: 30px;
