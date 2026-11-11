@@ -302,7 +302,10 @@
     padding: 18px;
     margin: 12px 0 20px;
     box-shadow: 0 5px 18px #0000000b;
+    cursor: pointer;
   }
+  [data-kontroll-iphone] .admin-menu .mobile-account:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  [data-kontroll-iphone] .admin-menu .iphone-account-chevron { flex: none; color: var(--muted); font-size: 26px; line-height: 1; }
   [data-kontroll-iphone] .admin-menu .iphone-notifications-link {
     display: flex;
     align-items: center;
@@ -344,6 +347,28 @@
     margin-top: 24px;
     border: 0;
   }
+  [data-kontroll-iphone] .admin-menu #logoutButton {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    flex: none;
+    width: 100%;
+    height: auto;
+    min-height: 54px;
+    margin-top: auto;
+    padding: 14px 18px;
+    border: 0;
+    border-radius: 18px;
+    background: #b42334 !important;
+    color: #fff !important;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: left;
+    overflow: visible;
+  }
+  [data-kontroll-iphone] .admin-menu #logoutButton svg { flex: none; }
+  [data-kontroll-iphone] .admin-menu #logoutButton::after { content: none !important; }
   [data-kontroll-iphone] .admin-menu .mobile-menu-items {
     display: flex;
     flex-direction: column;
