@@ -1,0 +1,188 @@
+@media screen {
+  html[data-kontroll-iphone] {
+    --ios-top: env(safe-area-inset-top, 0px);
+    --ios-bottom: env(safe-area-inset-bottom, 0px);
+    --ios-left: env(safe-area-inset-left, 0px);
+    --ios-right: env(safe-area-inset-right, 0px);
+    --ios-keyboard: var(--iphone-keyboard-inset, 0px);
+    scroll-padding: calc(76px + var(--ios-top)) 0 calc(92px + var(--ios-bottom));
+  }
+
+  [data-kontroll-iphone] body {
+    --ios-ambient: #d9f0e9;
+    --ios-canvas: #f5faf8;
+    --ios-glass: #f8fffbeb;
+    --ios-rim: #fff;
+    --ios-tint: #d1eee5;
+    --ios-shadow: 0 12px 36px #12453d26, 0 2px 8px #12453d12;
+    background: radial-gradient(ellipse at 86% 0, var(--ios-ambient), transparent 38rem), var(--ios-canvas);
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+
+  [data-kontroll-iphone] body[data-theme="dark"] {
+    --ios-ambient: #1b3b33;
+    --ios-canvas: #101c19;
+    --ios-glass: #1c302bf0;
+    --ios-rim: #ffffff35;
+    --ios-tint: #285549;
+    --ios-shadow: 0 14px 42px #0007, 0 2px 8px #0004;
+  }
+
+  [data-kontroll-iphone] .topbar {
+    display: flex;
+    justify-content: space-between;
+    min-height: 68px;
+    height: auto;
+    padding: calc(10px + var(--ios-top)) max(16px, var(--ios-right)) 10px max(16px, var(--ios-left));
+    background: var(--ios-canvas);
+    border-bottom: 1px solid var(--line);
+  }
+
+  [data-kontroll-iphone] body[data-auth="true"] .topbar { display: none; }
+  [data-kontroll-iphone] .wrap {
+    min-width: 0;
+    padding-inline: max(16px, var(--ios-left)) max(16px, var(--ios-right));
+  }
+  [data-kontroll-iphone] #appShell { padding-bottom: calc(105px + var(--ios-bottom)); }
+  [data-kontroll-iphone] .foot {
+    padding-inline: max(16px, var(--ios-left)) max(16px, var(--ios-right));
+    padding-bottom: calc(78px + var(--ios-bottom));
+  }
+
+  [data-kontroll-iphone] :is(.header-nav, .admin-menu, .overlay .dialog) {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 var(--ios-rim), var(--ios-shadow);
+  }
+
+  [data-kontroll-iphone="glass"] :is(.header-nav, .admin-menu, .overlay .dialog) {
+    background: linear-gradient(165deg, #ffffff16, transparent 52%), var(--ios-glass);
+    -webkit-backdrop-filter: blur(16px) saturate(145%);
+    backdrop-filter: blur(16px) saturate(145%);
+  }
+
+  [data-kontroll-iphone] .header-nav:not([hidden]) {
+    display: flex !important;
+    position: fixed;
+    inset: auto max(14px, var(--ios-right)) calc(9px + var(--ios-bottom)) max(14px, var(--ios-left));
+    z-index: 3;
+    width: auto;
+    max-width: 460px;
+    min-height: 60px;
+    margin: 0 auto;
+    padding: 5px;
+    gap: 3px;
+    border-radius: 32px;
+    overflow: visible;
+  }
+
+  [data-kontroll-iphone] .header-nav .view-tab:not([hidden]) {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 50px;
+    gap: 3px;
+    padding: 5px 3px;
+    border: 0;
+    border-radius: 26px;
+    color: var(--ink);
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
+  }
+  [data-kontroll-iphone] .header-nav .view-tab svg { width: 21px; height: 21px; flex: none; }
+  [data-kontroll-iphone] body .header-nav .view-tab[aria-current="page"] {
+    color: var(--green);
+    background: var(--ios-tint);
+    box-shadow: inset 0 1px 1px var(--ios-rim);
+  }
+  [data-kontroll-iphone] .header-nav .view-tab::after { display: none; }
+  [data-kontroll-iphone][data-iphone-keyboard] .header-nav:not([hidden]) { display: none !important; }
+
+  [data-kontroll-iphone] .admin-menu {
+    max-height: calc(100dvh - 85px - var(--ios-top) - var(--ios-bottom));
+    overflow: auto;
+    border-radius: 24px;
+  }
+  [data-kontroll-iphone] .admin-menu button { min-height: 44px; }
+  [data-kontroll-iphone] .auth-shell {
+    padding: max(20px, var(--ios-top)) max(16px, var(--ios-right)) max(20px, var(--ios-bottom)) max(16px, var(--ios-left));
+  }
+  [data-kontroll-iphone] .auth-card {
+    border-radius: 34px;
+    box-shadow: inset 0 1px 0 var(--ios-rim), var(--ios-shadow);
+  }
+  [data-kontroll-iphone] :is(.heading h1, .auth-card h1) { letter-spacing: -.04em; }
+  [data-kontroll-iphone] :is(.panel, .summary-card, .month-card, .withdrawal-card, .notification-item) {
+    border-radius: 22px;
+  }
+  [data-kontroll-iphone] :is(.summary-card, .withdrawal-card) { box-shadow: 0 3px 12px #123b3010; }
+  [data-kontroll-iphone] :is(.control, .auth-card, .recovery-filters) :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]),
+  [data-kontroll-iphone] :is(.search, .withdrawal-search, .status-select) {
+    font-size: 16px;
+    min-height: 44px;
+    border-radius: 14px;
+    scroll-margin-block: 56px;
+  }
+  [data-kontroll-iphone] :is(.primary, .secondary, .danger, .theme-toggle, .subnav .view-tab, .notification-item button) {
+    min-height: 44px;
+    border-radius: 999px;
+    transition: transform 170ms cubic-bezier(.22, .75, .3, 1), background-color 150ms, box-shadow 150ms;
+  }
+  [data-kontroll-iphone] :is(.primary, .secondary, .theme-toggle, .view-tab, .x):not(:disabled):active {
+    transform: scale(.96);
+    box-shadow: inset 0 1px 3px #14342b20;
+  }
+  [data-kontroll-iphone] button:focus-visible { outline-offset: 2px; }
+  [data-kontroll-iphone] :is(.recovery-panels .panel, .withdrawal-metric) { min-width: 0; overflow-x: auto; }
+  [data-kontroll-iphone] :is(.recovery-panels table, .withdrawal-report-table) { min-width: max-content; }
+
+  [data-kontroll-iphone] .overlay {
+    align-items: end;
+    background: #091c1775;
+    padding: max(12px, var(--ios-top)) max(8px, var(--ios-right))
+      max(8px, var(--ios-bottom), var(--ios-keyboard)) max(8px, var(--ios-left));
+  }
+  [data-kontroll-iphone] .overlay .dialog {
+    width: min(100%, 620px);
+    max-height: calc(100dvh - max(12px, var(--ios-top)) - max(8px, var(--ios-bottom), var(--ios-keyboard)));
+    border-radius: 30px;
+    scroll-padding-block: 75px 18px;
+  }
+  [data-kontroll-iphone] .overlay .dialog-head { background: var(--paper); }
+  [data-kontroll-iphone] .overlay.open .dialog { animation: iphone-sheet-in 220ms cubic-bezier(.2, .75, .3, 1) both; }
+  [data-kontroll-iphone] .toast { bottom: calc(82px + var(--ios-bottom)); }
+
+  @keyframes iphone-sheet-in {
+    from { transform: translateY(18px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
+
+@media screen and (orientation: landscape) and (max-height: 520px) {
+  [data-kontroll-iphone] .header-nav .view-tab:not([hidden]) { flex-direction: row; gap: 7px; }
+  [data-kontroll-iphone] .overlay .dialog { border-radius: 22px; }
+}
+
+@media screen and (prefers-reduced-motion: reduce) {
+  [data-kontroll-iphone] body *,
+  [data-kontroll-iphone] body *::before,
+  [data-kontroll-iphone] body *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  [data-kontroll-iphone] button:active { transform: none !important; }
+}
+
+@media screen and (prefers-reduced-transparency: reduce), screen and (prefers-contrast: more) {
+  [data-kontroll-iphone="glass"] :is(.header-nav, .admin-menu, .overlay .dialog) {
+    background: var(--paper);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-color: var(--md-outline);
+  }
+}
