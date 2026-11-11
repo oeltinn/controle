@@ -35,16 +35,19 @@ export function startRefraction() {
     stop();
     if (!eligible()) return;
     const current = generation;
+    const liquid = Number(document.documentElement.style.getPropertyValue('--ios-liquid-level') || 55) / 100;
     try {
       lens = liquidGL({
         target: '.iphone-refraction-pane', snapshot: 'body', content: false,
-        engine: 'webgl2', resolution: 1, refraction: 0.018,
+        engine: 'webgl2', resolution: 1, refraction: 0.004 + liquid * 0.026,
         bevelDepth: 0.045, bevelWidth: 0.2, aberration: 0.012,
-        frost: 1.2, magnify: 1, shadow: false, specular: false,
+        frost: 7 - liquid * 6.6, magnify: 1, shadow: false, specular: false,
         tilt: false, draggable: false, reveal: 'none',
-        interaction: 'fluid', interactionStrength: 0.16,
+        interaction: 'fluid', interactionStrength: .04 + liquid * .24,
         interactionRadius: 0.3, interactionViscosity: 0.8,
-        tint: document.body.dataset.theme === 'dark' ? 'rgba(12,30,25,0.48)' : 'rgba(245,255,250,0.12)',
+        tint: document.body.dataset.theme === 'dark'
+          ? `rgba(12,30,25,${(.72 - liquid * .48).toFixed(2)})`
+          : `rgba(245,255,250,${(.55 - liquid * .48).toFixed(2)})`,
         on: { init() {
           if (current !== generation) return;
           clearTimeout(watchdog);
@@ -92,6 +95,7 @@ export function startRefraction() {
   }
   for (const query of preferences) query.addEventListener('change', schedule);
   document.addEventListener('visibilitychange', schedule);
+  document.addEventListener('kontroll-glass-change', schedule);
   window.addEventListener('pagehide', () => { clearTimeout(timer); stop(); });
   window.addEventListener('pageshow', schedule);
   window.addEventListener('beforeprint', () => { clearTimeout(timer); stop(); });
