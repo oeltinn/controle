@@ -10,6 +10,10 @@ function iphoneMaterial() {
   const { userAgent, platform, maxTouchPoints } = navigator;
   const iphone = /\biPhone\b/i.test(userAgent) || platform === 'iPhone';
   if (!iphone || maxTouchPoints < 1 || /\biPad\b|Android|Windows/i.test(userAgent)) return null;
+  const safari = /Safari\//i.test(userAgent) &&
+    (/Version\/\d+/i.test(userAgent) || navigator.standalone === true) &&
+    !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA|YaBrowser|Mercury/i.test(userAgent);
+  if (!safari) return null;
 
   const systemVersion = Number(userAgent.match(/iPhone OS (\d+)/)?.[1]);
   const safariVersion = Number(userAgent.match(/Version\/(\d+)/)?.[1]);
