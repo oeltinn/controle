@@ -81,10 +81,10 @@ export function renderWithdrawalReport(root, visits, from, to, city = '') {
   }
   const {months, people, totals} = withdrawalMetrics(visits, from, to);
   const period = [from && 'Desde '+monthLabel(from), to && 'Até '+monthLabel(to)].filter(Boolean).join(' · ');
-  const issued = new Intl.DateTimeFormat('pt-BR', {timeZone:'America/Sao_Paulo'}).format(new Date());
   const rate = totals.attempts ? percentage.format(totals.collected / totals.attempts) : '—';
   const indicators = [...series.map(([key,label])=>[label,number.format(totals[key])]), ['Taxa de recolhimento',rate]];
-  root.innerHTML = `<p class="withdrawal-report-meta"><strong>${escape(period || 'Todo o histórico')}</strong> · ${escape(city || 'Todas as cidades')} · Emitido em ${issued}</p>
+  root.innerHTML = `<p class="withdrawal-report-meta"><strong>${escape(period || 'Todo o histórico')}</strong> · ${escape(city || 'Todas as cidades')}</p>
+    ${panel('Retiradas concluídas por mês', columns(months.map(([month,row])=>[monthLabel(month),row])))}
     <div class="recovery-cards withdrawal-indicators">${indicators.map(([label,value])=>`<div class="summary-card"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div>
     <p class="chart-note">O mês segue a data do registro no horário de Brasília. Os resultados contam registros de visita. A taxa divide os recolhimentos pelas tentativas. O ranking usa o responsável que registrou a visita.</p>
     ${resultTable('Tentativas e resultados por mês','Mês',months.map(([month,row])=>[monthLabel(month),row]),totals)}

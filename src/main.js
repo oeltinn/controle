@@ -1,3 +1,4 @@
+import { printReport } from './print-report.js';
 import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-report.js';
 import { supabase, isSupabaseConfigured, setRememberSession } from './supabase.js';
 import { renderRecoveryReport } from './recovery-report.js';
@@ -242,7 +243,7 @@ $('pushAllow').addEventListener('click', async () => {
   finally { $('pushAllow').disabled = false; }
 });
 function updatePushSetting(enabled) {
-  $('notificationSettings').textContent = enabled ? 'Desativar notificações neste dispositivo' : 'Ativar notificações neste dispositivo';
+  $('notificationSettings').setAttribute('aria-checked', String(enabled));
 }
 function renderNotificationInbox() {
   const unread = inbox.filter(item => !item.read_at).length;
@@ -257,6 +258,7 @@ function renderNotificationInbox() {
 }
 $('notificationBell').addEventListener('click', async () => {
   $('notificationsOverlay').classList.add('open');
+  void getPushSubscription().then(subscription => updatePushSetting(Boolean(subscription))).catch(() => {});
   try { inbox = await getInbox(sessionUser.id); renderNotificationInbox(); }
   catch (error) { showToast(`Não foi possível carregar notificações: ${error.message}`); }
 });
@@ -266,16 +268,18 @@ $('notificationList').addEventListener('click', async event => {
   catch (error) { showToast(`Não foi possível marcar como lida: ${error.message}`); }
 });
 $('notificationSettings').addEventListener('click', async () => {
-  closeMenu();
+  const toggle = $('notificationSettings');
+  toggle.disabled = true;
   try {
     const existing = await getPushSubscription();
     if (existing) { await disablePush(); localStorage.setItem('kontroll-push-choice','off'); updatePushSetting(false); showToast('Notificações desativadas neste dispositivo.'); }
     else { await enablePush(); localStorage.setItem('kontroll-push-choice','on'); updatePushSetting(true); showToast('Notificações ativadas neste dispositivo.'); }
   } catch (error) { showToast(error.message); }
+  finally { toggle.disabled = false; }
 });
 $('composeNotification').addEventListener('click', async () => {
   if (role !== 'admin') return;
-  closeMenu(); $('notificationForm').reset(); $('notificationError').textContent = '';
+  closeOverlay('notificationsOverlay'); $('notificationForm').reset(); $('notificationError').textContent = '';
   $('notificationTargetType').dispatchEvent(new Event('change'));
   $('composeNotificationOverlay').classList.add('open');
   try {
@@ -360,7 +364,7 @@ $('withdrawalSubnav').addEventListener('click', event => {
 });
 for (const id of ['withdrawalFrom','withdrawalTo','withdrawalReportCity']) $(id).addEventListener('change', drawWithdrawalReport);
 $('printWithdrawalReport').addEventListener('click', () => {
-  if (role === 'admin' && currentView === 'withdrawals' && withdrawalTab === 'report') window.print();
+  if (role === 'admin' && currentView === 'withdrawals' && withdrawalTab === 'report') printReport('Relatório de retirada de ONU', [$('withdrawalReport').cloneNode(true)]);
 });
 
 function latestVisit(withdrawalId) { return withdrawalVisits.find((visit) => visit.withdrawal_id === withdrawalId) || null; }
@@ -538,7 +542,30 @@ $('adminMenuToggle').addEventListener('click', () => {
   const menu = $('adminMenu'); menu.hidden = !menu.hidden; $('adminMenuToggle').setAttribute('aria-expanded', String(!menu.hidden));
 });
 $('mobileThemeToggle').addEventListener('click', () => setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
-$('printReport').addEventListener('click', () => window.print());
+function negativeReportSection() {
+  const section = $('reportsView').cloneNode(true);
+  section.hidden = false;
+  section.classList.remove('view-pane');
+  const charts = section.querySelector('.charts-grid');
+  charts.previousElementSibling.remove();
+  section.prepend(charts);
+  return section;
+}
+$('printReport').addEventListener('click', () => printReport('Relatório de negativações', [negativeReportSection()]));
+$('printOverview').addEventListener('click', () => {
+  const [negative, equipment] = $('monthlyView').querySelector('.overview-grid').children;
+  const negativeSection = negative.cloneNode(true);
+  const equipmentSection = equipment.cloneNode(true);
+  for (const section of [negativeSection, equipmentSection]) {
+    section.classList.add('pdf-section');
+    section.append(section.querySelector('.dashboard-summary'));
+  }
+  const withdrawalDetails = document.createElement('div');
+  renderWithdrawalReport(withdrawalDetails, withdrawalVisits, '', '');
+  equipmentSection.append(withdrawalDetails);
+  negativeSection.append(negativeReportSection());
+  printReport('Relatório geral', [negativeSection, equipmentSection]);
+});
 document.addEventListener('click', (event) => { if (!event.target.closest('#adminMenuWrap')) closeMenu(); });
 $('mobileProfileButton').addEventListener('click', () => { closeMenu(); $('profileOverlay').classList.add('open'); $('profileName').value = myProfile?.display_name || ''; $('profilePhone').value = myProfile?.phone || ''; $('profileEmail').value = sessionUser?.email || ''; $('profileError').textContent = ''; $('passwordChangeForm').reset(); $('passwordChangeError').textContent = ''; });
 $('profileForm').addEventListener('submit', async (event) => {
@@ -642,7 +669,7 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !document.getElementById('deleteBatchDialog').open) { const resolving = $('resolveOverlay').classList.contains('open'); document.querySelectorAll('.overlay.open').forEach((overlay) => closeOverlay(overlay.id)); if (resolving) renderClients(); $('adminMenu').hidden = true; } });
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
-$('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('clientName').focus(); });
+$('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('contract').focus(); });
 $('addWithdrawalBtn').addEventListener('click', async () => {
   if (role === 'technician') return;
   $('withdrawalForm').reset();
@@ -652,7 +679,7 @@ $('addWithdrawalBtn').addEventListener('click', async () => {
   equipment.options.length = 1;
   equipment.disabled = true;
   $('withdrawalFormOverlay').classList.add('open');
-  $('withdrawalName').focus();
+  $('withdrawalContract').focus();
   void initializeClientPhone('withdrawalPhone').catch(()=>{ $('withdrawalPhoneHint').textContent='Não foi possível carregar os países. O telefone pode ficar em branco.'; });
   try {
     for (const model of await listWithdrawalEquipmentModels()) equipment.add(new Option(model,model));
@@ -841,7 +868,8 @@ function bindWithdrawalReview() {
   $('catalogClients').addEventListener('click',()=>selectCatalogType('clients'));
   $('openCatalog').addEventListener('click',()=>{
     if(role!=='admin') return;
-    $('equipmentCsvFile').value='';
+    closeMenu();
+    selectCatalogType(currentView === 'withdrawals' ? 'onu' : 'clients');
     choose(null);
     $('catalogOverlay').classList.add('open');
   });
