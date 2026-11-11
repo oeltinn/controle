@@ -9,8 +9,7 @@ const filters = {from:'',to:'',city:'',district:''};
 const panel = (title,rows) => `<section class="panel"><div class="panel-head"><h3>${title}</h3></div>${rows.length ? `<table aria-label="${title}"><thead><tr><th>Categoria</th><th>Registros</th></tr></thead><tbody>${rows.map(([label,value])=>`<tr><th scope="row">${escape(label)}</th><td>${number.format(value)}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">Nenhum registro neste recorte.</p>'}</section>`;
 const card = (label,value) => `<div class="summary-card"><span>${label}</span><strong>${typeof value==='number'?number.format(value):escape(value)}</strong></div>`;
 
-export function renderRecoveryReport(clients) {
-  const root = document.getElementById('recoveryReport');
+export function renderRecoveryReport(clients, root = document.getElementById('recoveryReport'), selection = filters) {
   const today = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date());
   const {records} = parseRows(pulsoRows(clients),today);
   const options = values => [...new Set(values)].filter(Boolean).sort((a,b)=>a.localeCompare(b,'pt-BR')).map(v=>`<option value="${escape(v)}">${escape(v)}</option>`).join('');
@@ -21,13 +20,13 @@ export function renderRecoveryReport(clients) {
   const results = root.querySelector('.recovery-results');
   const controls = root.querySelectorAll('[name]');
   for (const el of controls) {
-    el.value = filters[el.name];
-    if (el.tagName === 'SELECT' && !el.value) filters[el.name] = '';
-    el.addEventListener('change',()=>{ filters[el.name]=el.value; draw(); });
+    el.value = selection[el.name];
+    if (el.tagName === 'SELECT' && !el.value) selection[el.name] = '';
+    el.addEventListener('change',()=>{ selection[el.name]=el.value; draw(); });
   }
   draw();
   function draw() {
-    const {from,to,city,district} = filters;
+    const {from,to,city,district} = selection;
     if (from && to && from > to) { results.innerHTML='<p role="alert">A data inicial deve vir antes da data final.</p>'; return; }
     const a=from||'2000-01-01', b=to||'2100-12-31';
     const scoped=records.filter(r=>(!city||r.city===city)&&(!district||r.district===district));

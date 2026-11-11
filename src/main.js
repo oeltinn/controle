@@ -563,7 +563,9 @@ $('printOverview').addEventListener('click', () => {
   const withdrawalDetails = document.createElement('div');
   renderWithdrawalReport(withdrawalDetails, withdrawalVisits, '', '');
   equipmentSection.append(withdrawalDetails);
-  negativeSection.append(negativeReportSection());
+  const negativeDetails = negativeReportSection();
+  renderRecoveryReport(clients, negativeDetails.querySelector('#recoveryReport'), { from:'', to:'', city:'', district:'' });
+  negativeSection.append(negativeDetails);
   printReport('Relatório geral', [negativeSection, equipmentSection]);
 });
 document.addEventListener('click', (event) => { if (!event.target.closest('#adminMenuWrap')) closeMenu(); });
