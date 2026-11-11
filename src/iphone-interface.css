@@ -231,13 +231,13 @@
     border-radius: 16px;
   }
   [data-kontroll-iphone="glass"] .admin-menu {
-    background: var(--ios-canvas);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+    background: var(--ios-canvas) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
     box-shadow: none;
   }
   [data-kontroll-iphone="glass"] .admin-menu > button {
-    background: var(--paper);
+    background: var(--paper) !important;
     border: 1px solid var(--line);
   }
   [data-kontroll-iphone="glass"] .admin-menu .mobile-menu-items button.active {
