@@ -67,6 +67,38 @@ function addNavigationLens() {
   schedule();
 }
 
+function addGlassControl() {
+  const menu = document.querySelector('#adminMenu');
+  const themeButton = document.querySelector('#mobileThemeToggle');
+  if (!menu || !themeButton) return;
+  const setting = document.createElement('label');
+  setting.className = 'iphone-glass-setting';
+  setting.innerHTML = '<span>Aparência do vidro</span><input type="range" min="0" max="100" step="1" aria-label="Aparência do vidro: fosco a líquido"><span class="iphone-glass-ends"><span>Fosco</span><span>Líquido</span></span>';
+  themeButton.before(setting);
+  const slider = setting.querySelector('input');
+  let saved = 55;
+  try {
+    const stored = localStorage.getItem('kontroll.iphoneGlass');
+    if (stored !== null) saved = Number(stored);
+  } catch { /* Private browsing */ }
+  slider.value = String(Math.max(0, Math.min(100, saved)));
+  const apply = () => {
+    const liquid = Number(slider.value) / 100;
+    const dark = document.body.dataset.theme === 'dark';
+    const opacity = (dark ? .82 : .84) - liquid * (dark ? .65 : .76);
+    document.body.style.setProperty('--ios-glass', `rgba(${dark ? '16, 43, 34' : '244, 255, 249'}, ${opacity.toFixed(2)})`);
+    document.body.style.setProperty('--ios-sheet', `rgba(${dark ? '20, 42, 35' : '247, 255, 251'}, ${(.94 - liquid * .35).toFixed(2)})`);
+    document.documentElement.style.setProperty('--ios-liquid-level', slider.value);
+    document.dispatchEvent(new Event('kontroll-glass-change'));
+  };
+  slider.addEventListener('input', apply);
+  slider.addEventListener('change', () => {
+    try { localStorage.setItem('kontroll.iphoneGlass', slider.value); } catch { /* Private browsing */ }
+  });
+  new MutationObserver(apply).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
+  apply();
+}
+
 function observeKeyboard(root) {
   const viewport = window.visualViewport;
   if (!viewport) return;
@@ -95,6 +127,7 @@ if (material) {
     root.dataset.kontrollIphone = material;
     if (material === 'glass') {
       addNavigationLens();
+      addGlassControl();
       import('./iphone-refraction.js').then(({ startRefraction }) => startRefraction())
         .catch(error => console.warn('Refração indisponível; usando transparência CSS.', error));
     }
