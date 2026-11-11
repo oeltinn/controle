@@ -90,8 +90,8 @@ function addGlassControl() {
     const liquid = Number(slider.value) / 100;
     const dark = document.body.dataset.theme === 'dark';
     const opacity = (dark ? .82 : .84) - liquid * (dark ? .65 : .76);
-    document.body.style.setProperty('--ios-glass', `rgba(${dark ? '16, 43, 34' : '244, 255, 249'}, ${opacity.toFixed(2)})`);
-    document.body.style.setProperty('--ios-sheet', `rgba(${dark ? '20, 42, 35' : '247, 255, 251'}, ${(.94 - liquid * .35).toFixed(2)})`);
+    document.body.style.setProperty('--ios-glass', `rgba(${dark ? '28, 28, 30' : '244, 255, 249'}, ${opacity.toFixed(2)})`);
+    document.body.style.setProperty('--ios-sheet', `rgba(${dark ? '36, 36, 38' : '247, 255, 251'}, ${(.94 - liquid * .35).toFixed(2)})`);
     document.documentElement.style.setProperty('--ios-liquid-level', slider.value);
   };
   slider.addEventListener('input', apply);
@@ -110,7 +110,7 @@ function prepareProfileSheet() {
   if (!menu || !toggle || !bell) return;
   const heading = document.createElement('div');
   heading.className = 'iphone-profile-heading';
-  heading.innerHTML = '<span>Minha conta</span><button type="button" aria-label="Fechar perfil">×</button>';
+  heading.innerHTML = '<img src="/kontroll-mark.png" alt=""><span>Minha conta</span><button type="button" aria-label="Fechar perfil">×</button>';
   heading.querySelector('button').addEventListener('click', () => toggle.click());
   menu.prepend(heading);
   toggle.innerHTML = '<svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c.4-4 3-6 7.5-6s7.1 2 7.5 6"/></svg><span class="iphone-profile-badge" hidden></span>';

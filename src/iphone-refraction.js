@@ -47,7 +47,7 @@ export function startRefraction() {
         interaction: 'fluid', interactionStrength: .04 + liquid * .24,
         interactionRadius: 0.3, interactionViscosity: 0.8,
         tint: document.body.dataset.theme === 'dark'
-          ? `rgba(12,30,25,${(.72 - liquid * .48).toFixed(2)})`
+          ? `rgba(22,22,24,${(.72 - liquid * .48).toFixed(2)})`
           : `rgba(245,255,250,${(.55 - liquid * .48).toFixed(2)})`,
         on: { init() {
           if (current !== generation) return;
