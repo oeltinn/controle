@@ -113,6 +113,24 @@ function prepareProfileSheet() {
   heading.innerHTML = '<img src="/kontroll-mark.png" alt=""><span>Minha conta</span><button type="button" aria-label="Fechar perfil"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M5 5l14 14M19 5 5 19"/></svg></button>';
   heading.querySelector('button').addEventListener('click', () => toggle.click());
   menu.prepend(heading);
+  const account = menu.querySelector('.mobile-account');
+  const settingsButton = account.querySelector('#mobileProfileButton');
+  const logoutButton = account.querySelector('#logoutButton');
+  settingsButton.hidden = true;
+  account.setAttribute('role', 'button');
+  account.setAttribute('tabindex', '0');
+  account.setAttribute('aria-label', 'Configurar conta e senha');
+  account.addEventListener('click', () => settingsButton.click());
+  account.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    settingsButton.click();
+  });
+  const chevron = document.createElement('span');
+  chevron.className = 'iphone-account-chevron';
+  chevron.setAttribute('aria-hidden', 'true');
+  chevron.textContent = '›';
+  account.append(chevron);
   toggle.innerHTML = '<svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c.4-4 3-6 7.5-6s7.1 2 7.5 6"/></svg><span class="iphone-profile-badge" hidden></span>';
   toggle.setAttribute('aria-label', 'Abrir perfil');
   toggle.title = 'Perfil';
@@ -142,6 +160,10 @@ function prepareProfileSheet() {
   new MutationObserver(updateCount).observe(badge, { attributes: true, childList: true, characterData: true });
   updateCount();
   menu.append(document.querySelector('#mobileThemeToggle'));
+  const logoutLabel = document.createElement('span');
+  logoutLabel.textContent = 'Sair da conta';
+  logoutButton.append(logoutLabel);
+  menu.append(logoutButton);
 }
 
 function observeKeyboard(root) {
