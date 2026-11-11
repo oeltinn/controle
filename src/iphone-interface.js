@@ -73,12 +73,12 @@ function addNavigationLens() {
 
 function addGlassControl() {
   const menu = document.querySelector('#adminMenu');
-  const themeButton = document.querySelector('#mobileThemeToggle');
-  if (!menu || !themeButton) return;
+  const profile = document.querySelector('#profileOverlay .dialog');
+  if (!menu || !profile) return;
   const setting = document.createElement('label');
   setting.className = 'iphone-glass-setting';
   setting.innerHTML = '<span>Aparência do vidro</span><input type="range" min="0" max="100" step="1" aria-label="Aparência do vidro: fosco a líquido"><span class="iphone-glass-ends"><span>Fosco</span><span>Líquido</span></span>';
-  themeButton.before(setting);
+  profile.querySelector('#profileForm').before(setting);
   const slider = setting.querySelector('input');
   let saved = 55;
   try {
@@ -101,6 +101,42 @@ function addGlassControl() {
   });
   new MutationObserver(apply).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
   apply();
+}
+
+function prepareProfileSheet() {
+  const menu = document.querySelector('#adminMenu');
+  const toggle = document.querySelector('#adminMenuToggle');
+  const bell = document.querySelector('#notificationBell');
+  if (!menu || !toggle || !bell) return;
+  const heading = document.createElement('div');
+  heading.className = 'iphone-profile-heading';
+  heading.innerHTML = '<span>Minha conta</span><button type="button" aria-label="Fechar perfil">×</button>';
+  heading.querySelector('button').addEventListener('click', () => toggle.click());
+  menu.prepend(heading);
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c.4-4 3-6 7.5-6s7.1 2 7.5 6"/></svg><span class="iphone-profile-badge" hidden></span>';
+  toggle.setAttribute('aria-label', 'Abrir perfil');
+  toggle.title = 'Perfil';
+  const notifications = document.createElement('button');
+  notifications.type = 'button';
+  notifications.className = 'iphone-notifications-link';
+  notifications.innerHTML = '<span>Notificações</span><span class="iphone-notifications-count" hidden></span><span aria-hidden="true">›</span>';
+  notifications.addEventListener('click', () => {
+    toggle.click();
+    bell.click();
+  });
+  menu.querySelector('.mobile-account').after(notifications);
+  const badge = document.querySelector('#notificationBadge');
+  const updateCount = () => {
+    const count = badge.hidden ? '' : badge.textContent;
+    for (const element of [toggle.querySelector('.iphone-profile-badge'), notifications.querySelector('.iphone-notifications-count')]) {
+      element.hidden = !count;
+      element.textContent = count;
+    }
+    notifications.setAttribute('aria-label', count ? `Notificações, ${count} não lidas` : 'Notificações');
+  };
+  new MutationObserver(updateCount).observe(badge, { attributes: true, childList: true, characterData: true });
+  updateCount();
+  menu.append(document.querySelector('#mobileThemeToggle'));
 }
 
 function observeKeyboard(root) {
@@ -129,6 +165,7 @@ if (material) {
     const viewport = document.querySelector('meta[name="viewport"]');
     if (viewport) viewport.content += ', viewport-fit=cover';
     root.dataset.kontrollIphone = material;
+    prepareProfileSheet();
     if (material === 'glass') {
       addNavigationLens();
       addGlassControl();
