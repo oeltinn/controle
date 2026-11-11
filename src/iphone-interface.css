@@ -464,7 +464,7 @@
 
   [data-kontroll-iphone] .overlay {
     align-items: end;
-    background: #091c1775;
+    background: #0008;
     padding: max(12px, var(--ios-top)) max(8px, var(--ios-right))
       max(8px, var(--ios-bottom), var(--ios-keyboard)) max(8px, var(--ios-left));
   }
@@ -480,11 +480,25 @@
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
   }
+  [data-kontroll-iphone="glass"] .overlay:not(:is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay)) .dialog {
+    --ios-glass: rgba(245, 246, 248, .62);
+    border-color: #ffffff70;
+  }
+  [data-kontroll-iphone="glass"] body[data-theme="dark"] .overlay:not(:is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay)) .dialog {
+    --ios-glass: rgba(28, 28, 30, .58);
+    border-color: #ffffff25;
+  }
+  [data-kontroll-iphone="glass"] .overlay:not(:is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay)) .dialog-head {
+    background: rgba(245, 246, 248, .7);
+  }
+  [data-kontroll-iphone="glass"] body[data-theme="dark"] .overlay:not(:is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay)) .dialog-head {
+    background: rgba(28, 28, 30, .7);
+  }
   [data-kontroll-iphone] .overlay.open .dialog { animation: iphone-sheet-in 220ms cubic-bezier(.2, .75, .3, 1) both; }
   [data-kontroll-iphone] .toast { bottom: calc(82px + var(--ios-bottom)); }
 
-  /* Account and inbox use the solid grouped surfaces of the iPhone profile. */
-  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay) {
+  /* Account, inbox, catalog and permissions use the profile's solid grouped surfaces. */
+  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay) {
     --paper: #222225;
     --ink: #f4f4f6;
     --muted: #a5a5ad;
@@ -495,7 +509,7 @@
     padding: max(14px, var(--ios-top)) 0 0;
     background: #0009;
   }
-  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay) .dialog {
+  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay) .dialog {
     width: 100%;
     max-width: none;
     max-height: calc(100dvh - max(14px, var(--ios-top)));
@@ -509,14 +523,14 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay) .dialog-head {
+  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay) .dialog-head {
     top: 0;
     margin: 0 16px 12px;
     padding: 20px 4px 16px;
     border: 0;
     background: #08080a;
   }
-  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay) .dialog-head .x {
+  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay) .dialog-head .x {
     display: grid;
     place-items: center;
     width: 44px;
@@ -529,7 +543,9 @@
     line-height: 1;
   }
   [data-kontroll-iphone] #profileOverlay :is(.form, .iphone-glass-setting),
-  [data-kontroll-iphone] #notificationsOverlay .notification-controls {
+  [data-kontroll-iphone] #notificationsOverlay .notification-controls,
+  [data-kontroll-iphone] #catalogOverlay .form,
+  [data-kontroll-iphone] #usersOverlay .users-list {
     margin: 12px 16px;
     padding: 18px;
     border: 0;
@@ -546,12 +562,12 @@
     color: var(--ink);
   }
   [data-kontroll-iphone] #profileOverlay .control input[readonly] { background: #29292d; color: var(--muted); }
-  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay) .primary {
+  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay) .primary {
     background: #d8d8dc;
     color: #171719;
     box-shadow: none;
   }
-  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay) .secondary {
+  [data-kontroll-iphone] :is(#profileOverlay, #notificationsOverlay, #catalogOverlay, #usersOverlay) .secondary {
     background: #343438;
     border-color: #343438;
     color: var(--ink);
@@ -572,6 +588,22 @@
   }
   [data-kontroll-iphone] #notificationsOverlay .form-actions { margin: 18px 16px 0; }
   [data-kontroll-iphone] #notificationsOverlay #notificationSettings[aria-checked="true"] .switch-track { background: #d8d8dc; }
+  [data-kontroll-iphone] #catalogOverlay :is(.catalog-drop, details),
+  [data-kontroll-iphone] #usersOverlay .user-row select {
+    background: #303034;
+    border-color: #4a4a50;
+    color: var(--ink);
+    border-radius: 16px;
+  }
+  [data-kontroll-iphone] #catalogOverlay .catalog-drop.is-dragover { background: #38383c; }
+  [data-kontroll-iphone] #catalogOverlay .catalog-choices button.active {
+    background: #d8d8dc;
+    border-color: #d8d8dc;
+    color: #171719;
+  }
+  [data-kontroll-iphone] #usersOverlay .users-list { max-height: none; }
+  [data-kontroll-iphone] #usersOverlay .user-row { border-color: var(--line); }
+  [data-kontroll-iphone] #usersOverlay .form-actions { margin: 18px 16px 0; }
 
   @keyframes iphone-sheet-in {
     from { transform: translateY(18px); opacity: 0; }
