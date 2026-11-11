@@ -97,6 +97,7 @@
   [data-kontroll-iphone] body[data-theme="dark"] :is(.chart-body svg, .monthly-cards svg, .withdrawal-overview svg, .withdrawal-report svg, .chart-legend, .legend-swatch) {
     filter: grayscale(1);
   }
+  [data-kontroll-iphone] body[data-theme="dark"] svg { filter: grayscale(1); }
 
   [data-kontroll-iphone] body[data-auth="true"] .topbar { display: none; }
   [data-kontroll-iphone] .wrap {
@@ -114,6 +115,7 @@
     border: 1px solid var(--line);
     box-shadow: var(--ios-shadow);
   }
+  [data-kontroll-iphone] .admin-menu { border: 0 !important; }
 
   [data-kontroll-iphone="glass"] :is(.header-nav, .admin-menu, .overlay .dialog, .auth-card, .top-actions button, .toast) {
     background: var(--ios-glass);
