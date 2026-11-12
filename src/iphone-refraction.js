@@ -3,9 +3,7 @@
 import liquidGL from 'liquid-gl';
 
 export function startRefraction() {
-  const bottomNav = document.querySelector('.header-nav');
-  const mapNav = document.querySelector('#withdrawalSubnav');
-  let nav = bottomNav;
+  const nav = document.querySelector('.header-nav');
   const shell = document.querySelector('#appShell');
   if (!nav || !shell) return;
   const preferences = ['(prefers-reduced-motion: reduce)',
@@ -110,13 +108,6 @@ export function startRefraction() {
   };
   const schedule = () => {
     clearTimeout(timer);
-    const nextNav = document.body.hasAttribute('data-withdrawal-map-open') && mapNav ? mapNav : bottomNav;
-    if (nextNav !== nav) {
-      stop();
-      nav = nextNav;
-      nav.prepend(pane);
-      failures = 0;
-    }
     if (!eligible()) { if (lens) stop(); return; }
     if (!lens) timer = setTimeout(rebuild, 180);
   };

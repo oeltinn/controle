@@ -210,21 +210,22 @@
     overflow: hidden;
     overscroll-behavior: none;
   }
-  [data-kontroll-iphone] body[data-withdrawal-map-open] { position: relative; }
   [data-kontroll-iphone] body[data-withdrawal-map-open] .header-nav:not([hidden]) { display: none !important; }
   [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalsView {
     animation: none;
     transform: none;
   }
   [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMapPane {
-    position: absolute;
-    inset: 0 0 auto;
-    height: 100dvh;
+    position: fixed;
+    inset: 0;
     z-index: 20;
     background: var(--ios-canvas);
   }
   [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMap {
-    height: 100%;
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
     min-height: 0;
     border: 0;
     border-radius: 0;
@@ -248,15 +249,12 @@
     background: var(--paper);
     box-shadow: var(--ios-shadow);
   }
-  [data-kontroll-iphone="glass"] body[data-withdrawal-map-open] #withdrawalSubnav:not([hidden]) {
-    background: var(--ios-glass);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-  }
-  [data-kontroll-iphone="glass"] body[data-withdrawal-map-open] #withdrawalSubnav[data-refraction-ready] {
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+  @media (prefers-reduced-transparency: no-preference) {
+    [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalSubnav:not([hidden]) {
+      background: color-mix(in srgb, var(--paper) 48%, transparent);
+      -webkit-backdrop-filter: blur(18px);
+      backdrop-filter: blur(18px);
+    }
   }
   [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalSubnav button:not([hidden]) {
     position: relative;
@@ -273,7 +271,7 @@
     color: var(--ink);
     background: var(--ios-tint);
   }
-  [data-kontroll-iphone="glass"] body[data-theme="dark"] :is(.header-nav, #withdrawalSubnav)[data-refraction-ready] canvas {
+  [data-kontroll-iphone="glass"] body[data-theme="dark"] .header-nav[data-refraction-ready] canvas {
     filter: brightness(.6);
   }
   [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMap .leaflet-top {
