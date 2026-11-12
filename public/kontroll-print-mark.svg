@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs><clipPath id="corners"><rect width="128" height="128" rx="30"/></clipPath></defs>
+  <image href="kontroll-mark.png" width="128" height="128" clip-path="url(#corners)"/>
+</svg>

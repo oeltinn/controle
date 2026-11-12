@@ -54,7 +54,7 @@ body[data-auth="true"] .topbar{display:none}.auth-shell{margin:clamp(32px,12vh,1
 .admin-menu{min-width:250px}.mobile-account #logoutButton{background:#b42334;color:white;border-radius:8px}.mobile-account #logoutButton:hover{background:#951b29}.mobile-account button{height:44px;display:grid;place-items:center}.mobile-account span{flex:1}.login-brand{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 20px;font-size:26px;letter-spacing:-.06em}.login-brand img{width:46px;height:46px;border-radius:12px}.report-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.report-heading h2{font-size:18px;margin:0}
  
 @media(prefers-reduced-motion:no-preference){.view-pane:not([hidden]){animation:tab-enter 160ms ease-out both}@keyframes tab-enter{from{opacity:.55;transform:translateY(4px)}to{opacity:1;transform:none}}}
-.report-heading{flex-wrap:wrap}.report-actions{display:flex;flex-wrap:wrap;gap:8px}@media print{.report-actions{display:none!important}}@page{size:A4;margin:14mm}
+.report-heading{flex-wrap:wrap}.report-actions{display:flex;flex-wrap:wrap;gap:8px}@media print{.report-actions{display:none!important}}@page{size:A4;margin:17mm 15mm 25mm;@bottom-left-corner{content:"";background:url("/kontroll-print-mark.svg") no-repeat center/9mm 9mm}@bottom-left{content:"kontroll.\A Tudo sob controle. Tudo conectado.";white-space:pre;font:8.5pt/1.25 system-ui;color:#19332f;padding-left:2mm;border-top:1px solid #c9ddd5}}
 @media print{body,body[data-theme="dark"]{--ink:#192b2a;--muted:#455452;--line:#d4dcda;--paper:#fff;--bg:#fff;color:var(--ink);background:white;print-color-adjust:exact;-webkit-print-color-adjust:exact}.topbar,.overlay,.toast,.foot,#negSubnav,#printReport,#appShell>.eyebrow,#appShell>.heading{display:none!important}#appShell{padding:0;max-width:none}#reportsView{animation:none}.charts-grid{display:block}.chart-panel{min-height:0;break-inside:avoid;box-shadow:none;margin-bottom:12px}.chart-body{min-height:0;padding:8px}.chart-body svg{width:auto;max-width:100%;height:170px}#monthlyBars svg{width:100%;height:auto}.chart-legend{padding:5px}.report-heading h2{font-size:22px}}
 
 .login-brand small{display:block;font-size:11px;letter-spacing:normal;color:var(--muted);font-weight:500}.auth-footer{text-align:center;color:var(--muted);font-size:12px;margin:22px 0 0}.phone-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.phone-fields>*{width:100%;min-width:0}.recovery-filters{display:flex;flex-wrap:wrap;gap:10px;padding:14px;background:var(--paper);border:1px solid var(--line);border-radius:14px}.recovery-filters label{display:grid;gap:4px;flex:1;min-width:130px}.recovery-filters :is(input,select){width:100%;min-height:42px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:7px}.recovery-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:16px}.recovery-cards .summary-card{display:grid;gap:4px}.recovery-panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.recovery-panels .panel{min-height:0}.recovery-panels table{width:100%;border-collapse:collapse}.recovery-panels th,.recovery-panels td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}.recovery-panels td:last-child{text-align:right}.recovery-panels h3{margin:0;font-size:15px}
@@ -132,17 +132,33 @@ body[data-user-role="technician"] #withdrawalsView .withdrawal-summary{display:n
 @media print{
   body.printing-report> :not(.pdf-report){display:none!important}
   body.printing-report .pdf-report{display:block!important;color:#192b2a}
-  @page{size:A4;margin:0}
-  .pdf-report{padding:14mm}
-  .pdf-report h1{font-size:21pt;margin:0 0 6mm}
+  .pdf-report{padding:0;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .pdf-report h1{font-size:21pt;margin:0 0 6mm;color:#19332f}
   .pdf-report h2,.pdf-report .panel-head{break-after:avoid}
   .pdf-report .pdf-section+.pdf-section{break-before:page}
   .pdf-report .trend-scroll,.pdf-report .withdrawal-chart-scroll{overflow:visible}
   .pdf-report .trend-scroll svg{display:block;width:100%!important;min-width:0!important;height:auto}
   .pdf-report .withdrawal-columns{min-width:0!important;grid-auto-columns:minmax(0,1fr)}
-  .pdf-report .panel,.pdf-report .summary-card{box-shadow:none}
-  .pdf-report footer{display:flex;align-items:center;gap:3mm;margin-top:8mm;padding-top:3mm;border-top:1px solid #d4dcda;break-inside:avoid;font-size:9pt}
-  .pdf-report footer img{width:9mm;height:9mm}
+  .pdf-report .panel,.pdf-report .summary-card{box-shadow:none;background:#fff}
+  .pdf-report .charts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4mm}
+  .pdf-report .chart-panel{break-inside:avoid;border:1px solid #dce9e4;border-radius:4mm;margin:0}
+  .pdf-report .chart-panel.wide{grid-column:1/-1}
+  .pdf-report .chart-panel .panel-head{background:#edf7f3;border-bottom-color:#cce3d9}
+  .pdf-report .chart-body{padding:3mm;min-height:0}
+  .pdf-report .chart-body svg{height:44mm;max-width:100%}
+  .pdf-report #monthlyBars svg{width:100%;height:auto;max-height:65mm}
+  .pdf-report .chart-legend{display:flex;flex-wrap:wrap;gap:2mm 4mm}
+  .pdf-report :is(.chart-body svg,.trend-scroll svg,.withdrawal-column,.withdrawal-data-bar,.legend-swatch){filter:none!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .pdf-report .withdrawal-column{background:#168b78}
+  .pdf-report .withdrawal-report-table td:nth-child(2) .withdrawal-data-bar{background:#e3a43d}
+  .pdf-report .withdrawal-report-table td:nth-child(3) .withdrawal-data-bar{background:#168b78}
+  .pdf-report .withdrawal-report-table td:nth-child(4) .withdrawal-data-bar{background:#df665f}
+  .pdf-report .summary-card{border-top:2mm solid #168b78}
+  .pdf-report .summary-card:nth-child(3n + 2){border-top-color:#df665f}
+  .pdf-report .summary-card:nth-child(3n){border-top-color:#e3a43d}
+  .pdf-report :is(.overview-table,.withdrawal-report-table,.recovery-panels table) thead{display:table-header-group}
+  .pdf-report :is(.overview-table,.withdrawal-report-table,.recovery-panels table) tr{break-inside:avoid}
+  .pdf-report :is(.panel-head,h2,h3){break-after:avoid}
 }
 </style><link rel="stylesheet" href="/src/material.css">
 <style>

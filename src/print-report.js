@@ -1,4 +1,7 @@
 export function printReport(title, sections) {
+  if (document.documentElement.hasAttribute('data-kontroll-iphone') ||
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+      matchMedia('(hover: none)').matches) return;
   const report = document.createElement('article');
   report.className = 'pdf-report';
   const heading = document.createElement('h1');
@@ -7,9 +10,6 @@ export function printReport(title, sections) {
   report.append(heading, ...sections);
   report.querySelectorAll('button, .report-heading, .recovery-filters').forEach(element => element.remove());
   report.querySelectorAll('details').forEach(element => { element.open = true; });
-  const footer = document.createElement('footer');
-  footer.innerHTML = '<img src="/kontroll-mark.png" alt=""><div><strong>kontroll.</strong><br>Tudo sob controle. Tudo conectado.</div>';
-  report.append(footer);
   const theme = document.body.dataset.theme;
   document.body.dataset.theme = 'light';
   document.body.classList.add('printing-report');
