@@ -50,7 +50,9 @@ async function getWithdrawalLocations(items) {
     const { data, error } = await supabase.from('sgp_contract_locations')
       .select('contract_id,latitude,longitude').in('contract_id', contracts.slice(offset, offset + 100));
     if (error) throw error;
-    for (const point of data) points.set(point.contract_id, point);
+    for (const point of data) {
+      if (point.latitude !== null && point.longitude !== null) points.set(point.contract_id, point);
+    }
   }
   return items.filter(item => points.has(item.contract_id)).map(item => ({ item, point: points.get(item.contract_id) }));
 }
@@ -93,7 +95,9 @@ $('locationImport').addEventListener('submit', async event => {
       rows = parseCsv(await file.text());
     } else throw new Error('Selecione um CSV ou XLSX.');
     const points = parseLocations(rows);
-    const { error } = await supabase.from('sgp_contract_locations').upsert(points, { onConflict: 'contract_id' });
+    const { error } = await supabase.from('sgp_contract_locations').upsert(
+      points.map(point => ({ source_changed_at: null, ...point })), { onConflict: 'contract_id' }
+    );
     if (error) throw error;
     form.reset();
     showToast(`${points.length} localizações importadas.`);
