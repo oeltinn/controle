@@ -17,6 +17,7 @@ export function startRefraction() {
   let watchdog;
   let generation = 0;
   let unavailable = false;
+  let failures = 0;
 
   const stop = () => {
     generation++;
@@ -28,10 +29,14 @@ export function startRefraction() {
   const eligible = () => !unavailable && !document.hidden &&
     !preferences.some(query => query.matches) &&
     !document.documentElement.hasAttribute('data-iphone-keyboard') &&
-    nav.getBoundingClientRect().width > 0 && !shell.hidden &&
-    !document.querySelector('.admin-menu:not([hidden])') &&
-    !document.querySelector('.overlay.open');
+    nav.getBoundingClientRect().width > 0 && !shell.hidden;
 
+  const tint = () => {
+    const liquid = Number(document.documentElement.style.getPropertyValue('--ios-liquid-level') || 55) / 100;
+    return document.body.dataset.theme === 'dark'
+      ? `rgba(22,22,24,${(.72 - liquid * .48).toFixed(2)})`
+      : `rgba(245,255,250,${(.55 - liquid * .48).toFixed(2)})`;
+  };
   const rebuild = () => {
     stop();
     if (!eligible()) return;
@@ -46,12 +51,11 @@ export function startRefraction() {
         tilt: false, draggable: false, reveal: 'none',
         interaction: 'fluid', interactionStrength: .04 + liquid * .24,
         interactionRadius: 0.3, interactionViscosity: 0.8,
-        tint: document.body.dataset.theme === 'dark'
-          ? `rgba(22,22,24,${(.72 - liquid * .48).toFixed(2)})`
-          : `rgba(245,255,250,${(.55 - liquid * .48).toFixed(2)})`,
+        tint: tint(),
         on: { init() {
           if (current !== generation) return;
           clearTimeout(watchdog);
+          failures = 0;
           for (const canvas of nav.querySelectorAll('canvas')) {
             canvas.setAttribute('aria-hidden', 'true');
             canvas.addEventListener('webglcontextlost', () => {
@@ -66,44 +70,45 @@ export function startRefraction() {
       watchdog = setTimeout(() => {
         if (current === generation && !nav.hasAttribute('data-refraction-ready')) {
           stop();
-          unavailable = true;
+          failures += 1;
+          if (failures < 3 && eligible()) timer = setTimeout(rebuild, 2000 * failures);
         }
       }, 8000);
     } catch (error) {
       stop();
-      unavailable = true;
+      failures += 1;
+      if (failures < 3 && eligible()) timer = setTimeout(rebuild, 2000 * failures);
       console.warn('Refração desativada neste dispositivo:', error);
     }
   };
-  const schedule = () => {
+  const schedule = (force = false) => {
     clearTimeout(timer);
-    if (!eligible()) stop();
-    timer = setTimeout(rebuild, 600);
+    if (!eligible()) { if (lens) stop(); return; }
+    if (force) { timer = setTimeout(rebuild, 180); return; }
+    if (!lens) timer = setTimeout(rebuild, 180);
   };
-  // Do not observe the canvas subtree: rendering must never trigger recapture.
-  new MutationObserver(schedule).observe(shell, {
-    subtree: true, childList: true, characterData: true,
-    attributes: true, attributeFilter: ['hidden', 'class'],
-  });
-  new MutationObserver(schedule).observe(document.body, {
-    attributes: true, attributeFilter: ['data-theme', 'data-auth'],
-  });
-  new MutationObserver(schedule).observe(document.documentElement, {
-    attributes: true, attributeFilter: ['data-iphone-keyboard'],
-  });
-  for (const overlay of document.querySelectorAll('.overlay')) {
-    new MutationObserver(schedule).observe(overlay, { attributes: true, attributeFilter: ['class'] });
-  }
-  const profileMenu = document.querySelector('#adminMenu');
-  if (profileMenu) new MutationObserver(schedule).observe(profileMenu, {
+  // liquidGL already tracks changes to its body snapshot. Rebuilding on each
+  // card or tab mutation destroys the WebGL context and can leave it inactive.
+  new MutationObserver(() => schedule()).observe(shell, {
     attributes: true, attributeFilter: ['hidden'],
   });
-  for (const query of preferences) query.addEventListener('change', schedule);
-  document.addEventListener('visibilitychange', schedule);
-  document.addEventListener('kontroll-glass-change', schedule);
+  new MutationObserver(() => schedule()).observe(document.body, {
+    attributes: true, attributeFilter: ['data-auth'],
+  });
+  new MutationObserver(() => schedule()).observe(document.documentElement, {
+    attributes: true, attributeFilter: ['data-iphone-keyboard'],
+  });
+  if ('ResizeObserver' in window) new ResizeObserver(() => schedule()).observe(nav);
+  for (const query of preferences) query.addEventListener('change', () => schedule());
+  document.addEventListener('visibilitychange', () => schedule());
+  document.addEventListener('kontroll-glass-change', () => schedule(true));
+  new MutationObserver(() => {
+    if (lens?.setTint) lens.setTint(tint());
+    else schedule(true);
+  }).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
   window.addEventListener('pagehide', () => { clearTimeout(timer); stop(); });
-  window.addEventListener('pageshow', schedule);
+  window.addEventListener('pageshow', () => schedule());
   window.addEventListener('beforeprint', () => { clearTimeout(timer); stop(); });
-  window.addEventListener('afterprint', schedule);
+  window.addEventListener('afterprint', () => schedule());
   schedule();
 }

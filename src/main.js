@@ -7,6 +7,11 @@ import { disablePush, enablePush, getInbox, getPushSubscription, markNotificatio
 import { listWithdrawalEquipmentModels, normalizeWithdrawalCity } from './data.js';
 import { createClientRecord, createWithdrawal, deleteClientRecord, deleteWithdrawal, deleteWithdrawalImport, findClientCatalogContract, getClientCatalogState, replaceClientCatalog, parseSgpClientWorkbook, findContractEquipment, getMyProfile, importContractEquipment, importCsv, importWithdrawalsCsv, listClients, listProfiles, listWithdrawalImports, listWithdrawalVisits, listWithdrawals, parseCsv, recordWithdrawalVisit, updateClientRecord, updateMyProfile, updateProfileRole, updateWithdrawal } from './data.js';
 
+// SVG geometry keeps the close mark centered across fonts, browsers and themes.
+for (const button of document.querySelectorAll('button.x')) {
+  button.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M5 5l14 14M19 5 5 19"/></svg>';
+}
+
 const $ = (id) => document.getElementById(id);
 const catalogAgeNotice = document.createElement('p');
 catalogAgeNotice.id = 'catalogAgeNotice'; catalogAgeNotice.hidden = true;
