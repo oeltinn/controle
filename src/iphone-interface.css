@@ -205,6 +205,99 @@
   }
   [data-kontroll-iphone][data-iphone-keyboard] .header-nav:not([hidden]) { display: none !important; }
 
+  [data-kontroll-iphone]:has(body[data-withdrawal-map-open]),
+  [data-kontroll-iphone] body[data-withdrawal-map-open] {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] { position: relative; }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] .header-nav:not([hidden]) { display: none !important; }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalsView {
+    animation: none;
+    transform: none;
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMapPane {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 100dvh;
+    z-index: 20;
+    background: var(--ios-canvas);
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMap {
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    touch-action: none;
+    overscroll-behavior: contain;
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalSubnav:not([hidden]) {
+    position: fixed;
+    inset: calc(8px + var(--ios-top)) max(10px, var(--ios-right)) auto max(10px, var(--ios-left));
+    z-index: 21;
+    display: flex;
+    width: auto;
+    max-width: 480px;
+    min-height: 54px;
+    margin: 0 auto;
+    padding: 5px;
+    gap: 3px;
+    overflow: visible;
+    border: 1px solid var(--ios-rim);
+    border-radius: 30px;
+    background: var(--paper);
+    box-shadow: var(--ios-shadow);
+  }
+  [data-kontroll-iphone="glass"] body[data-withdrawal-map-open] #withdrawalSubnav:not([hidden]) {
+    background: var(--ios-glass);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  [data-kontroll-iphone="glass"] body[data-withdrawal-map-open] #withdrawalSubnav[data-refraction-ready] {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalSubnav button:not([hidden]) {
+    position: relative;
+    z-index: 6;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    padding: 5px 4px;
+    border-radius: 24px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+  [data-kontroll-iphone] body[data-theme="dark"] :is(.header-nav, #withdrawalSubnav) .view-tab[aria-current="page"] {
+    color: var(--ink);
+    background: var(--ios-tint);
+  }
+  [data-kontroll-iphone="glass"] body[data-theme="dark"] :is(.header-nav, #withdrawalSubnav)[data-refraction-ready] canvas {
+    filter: brightness(.6);
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMap .leaflet-top {
+    top: calc(70px + var(--ios-top));
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMap .leaflet-bottom {
+    bottom: max(6px, var(--ios-bottom));
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] #withdrawalMapPane > .chart-note,
+  [data-kontroll-iphone] body[data-withdrawal-map-open] .withdrawal-map-heading > :not(#withdrawalMapStatus) {
+    display: none;
+  }
+  [data-kontroll-iphone] body[data-withdrawal-map-open] .withdrawal-map-heading {
+    position: absolute;
+    z-index: 1;
+    left: max(10px, var(--ios-left));
+    bottom: calc(26px + var(--ios-bottom));
+    margin: 0;
+    padding: 5px 9px;
+    border-radius: 14px;
+    background: var(--paper);
+    pointer-events: none;
+  }
+
   [data-kontroll-iphone] .admin-menu {
     position: fixed;
     inset: max(14px, var(--ios-top)) 0 0;

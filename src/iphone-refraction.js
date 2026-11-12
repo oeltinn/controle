@@ -3,7 +3,9 @@
 import liquidGL from 'liquid-gl';
 
 export function startRefraction() {
-  const nav = document.querySelector('.header-nav');
+  const bottomNav = document.querySelector('.header-nav');
+  const mapNav = document.querySelector('#withdrawalSubnav');
+  let nav = bottomNav;
   const shell = document.querySelector('#appShell');
   if (!nav || !shell) return;
   const preferences = ['(prefers-reduced-motion: reduce)',
@@ -108,6 +110,13 @@ export function startRefraction() {
   };
   const schedule = () => {
     clearTimeout(timer);
+    const nextNav = document.body.hasAttribute('data-withdrawal-map-open') && mapNav ? mapNav : bottomNav;
+    if (nextNav !== nav) {
+      stop();
+      nav = nextNav;
+      nav.prepend(pane);
+      failures = 0;
+    }
     if (!eligible()) { if (lens) stop(); return; }
     if (!lens) timer = setTimeout(rebuild, 180);
   };
@@ -117,7 +126,7 @@ export function startRefraction() {
     attributes: true, attributeFilter: ['hidden'],
   });
   new MutationObserver(() => schedule()).observe(document.body, {
-    attributes: true, attributeFilter: ['data-auth'],
+    attributes: true, attributeFilter: ['data-auth', 'data-withdrawal-map-open'],
   });
   new MutationObserver(() => schedule()).observe(document.documentElement, {
     attributes: true, attributeFilter: ['data-iphone-keyboard'],
@@ -126,7 +135,13 @@ export function startRefraction() {
   for (const query of preferences) query.addEventListener('change', () => schedule());
   document.addEventListener('visibilitychange', () => schedule());
   document.addEventListener('kontroll-glass-change', updateLevel);
-  new MutationObserver(updateLevel).observe(document.body, {
+  new MutationObserver(() => {
+    updateLevel();
+    const renderer = lens?.renderer;
+    if (renderer) requestAnimationFrame(() => {
+      if (lens?.renderer === renderer) void renderer.captureSnapshot();
+    });
+  }).observe(document.body, {
     attributes: true, attributeFilter: ['data-theme'],
   });
   window.addEventListener('pagehide', () => { clearTimeout(timer); stop(); });

@@ -16,10 +16,23 @@ export function validCoordinates(item) {
 
 export function renderWithdrawalMap(element, withdrawals, onOpen) {
   if (!map) {
-    map = L.map(element, { zoomControl: true, preferCanvas: true }).setView([-19.79, -42.14], 11);
+    const iphone = document.documentElement.hasAttribute('data-kontroll-iphone');
+    const gestureOptions = iphone ? {
+      inertiaDeceleration: 2300, inertiaMaxSpeed: 1800, tapHold: false,
+      zoomSnap: 0.5, zoomDelta: 0.5,
+    } : {};
+    map = L.map(element, { zoomControl: true, preferCanvas: true, ...gestureOptions })
+      .setView([-19.79, -42.14], 11);
     markers = L.layerGroup().addTo(map);
+    if (iphone && 'ResizeObserver' in window) {
+      new ResizeObserver(() => {
+        if (element.clientWidth && element.clientHeight) {
+          map.invalidateSize({ pan: false, debounceMoveend: true });
+        }
+      }).observe(element);
+    }
   }
-  map.invalidateSize();
+  map.invalidateSize({ pan: false, debounceMoveend: true });
   const online = navigator.onLine;
   if (online && !tileLayer) {
     tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {

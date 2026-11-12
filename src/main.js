@@ -340,6 +340,10 @@ function renderWithdrawalTab() {
   if (role !== 'admin' && withdrawalTab === 'report') withdrawalTab = 'list';
   const report = withdrawalTab === 'report';
   const map = withdrawalTab === 'map';
+  const mapOpen = active && map;
+  const wasMapOpen = document.body.hasAttribute('data-withdrawal-map-open');
+  document.body.toggleAttribute('data-withdrawal-map-open', mapOpen);
+  if (mapOpen && !wasMapOpen && document.documentElement.hasAttribute('data-kontroll-iphone')) window.scrollTo(0, 0);
   $('withdrawalSubnav').hidden = !active;
   $('withdrawalSubnav').querySelector('[data-withdrawal-tab="report"]').hidden = role !== 'admin';
   $('withdrawalListPane').hidden = report || map;
