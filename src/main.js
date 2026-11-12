@@ -1,3 +1,5 @@
+import { renderWithdrawalMap, validCoordinates } from './withdrawal-map.js';
+import { importContractLocations, parseCoordinatePair } from './data.js';
 import { printReport } from './print-report.js';
 import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-report.js';
 import { supabase, isSupabaseConfigured, setRememberSession } from './supabase.js';
@@ -140,11 +142,11 @@ async function showApp(user) {
 async function refreshClients() {
   if (!sessionUser) return;
   if (role === 'technician') {
-    try { clients = []; [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
+    try { clients = []; [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); if (currentView === 'withdrawals' && withdrawalTab === 'map') renderWithdrawalTab(); }
     catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
     return;
   }
-  try { clients = await listClients(); renderClients(); renderMonthly(); renderReports(); [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
+  try { clients = await listClients(); renderClients(); renderMonthly(); renderReports(); [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); if (currentView === 'withdrawals' && withdrawalTab === 'map') renderWithdrawalTab(); }
   catch (error) { showToast(`Não foi possível carregar os dados: ${error.message}`); }
 }
 function currentStatus(client) {
@@ -230,6 +232,9 @@ function setView(view) {
   renderWithdrawalTab();
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
   $('openCatalog').hidden = role !== 'admin';
+  const locationImport = $('importWithdrawalLocations');
+  if (locationImport) locationImport.hidden = role !== 'admin';
+
   $('catalogAgeNotice').hidden = view !== 'withdrawals' || role !== 'admin' || !clientCatalogState || (Date.now()-new Date(clientCatalogState.imported_at).getTime()) < 7*86400000;
   $('openImports').hidden = !canManageWithdrawals();
   document.querySelector('label[for=csvImportFile]').hidden = !['admin','operator'].includes(role);
@@ -333,12 +338,15 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
 
 function renderWithdrawalTab() {
   const active = currentView === 'withdrawals';
-  if (role !== 'admin') withdrawalTab = 'list';
+  if (role !== 'admin' && withdrawalTab === 'report') withdrawalTab = 'list';
   const report = withdrawalTab === 'report';
-  $('withdrawalSubnav').hidden = !active || role !== 'admin';
-  $('withdrawalListPane').hidden = report;
+  const map = withdrawalTab === 'map';
+  $('withdrawalSubnav').hidden = !active;
+  $('withdrawalSubnav').querySelector('[data-withdrawal-tab="report"]').hidden = role !== 'admin';
+  $('withdrawalListPane').hidden = report || map;
+  $('withdrawalMapPane').hidden = !map;
   $('withdrawalReportPane').hidden = !report;
-  $('withdrawalTools').hidden = !active || report || role === 'technician';
+  $('withdrawalTools').hidden = !active || report || map || role === 'technician';
   for (const button of $('withdrawalSubnav').querySelectorAll('button')) {
     const selected = button.dataset.withdrawalTab === withdrawalTab;
     button.classList.toggle('active', selected);
@@ -346,7 +354,16 @@ function renderWithdrawalTab() {
     else button.removeAttribute('aria-current');
   }
   if (active && report) drawWithdrawalReport();
+  if (active && map) requestAnimationFrame(() => {
+    if (currentView !== 'withdrawals' || withdrawalTab !== 'map') return;
+    const visible = withdrawals.filter(withdrawalVisible);
+    const result = renderWithdrawalMap($('withdrawalMap'), visible, openWithdrawalDetails);
+    $('withdrawalMapStatus').textContent = `${result.plotted} de ${result.total} retiradas com localização${result.online ? '' : ' · Mapa de ruas indisponível offline'}`;
+  });
 }
+for (const event of ['online', 'offline']) window.addEventListener(event, () => {
+  if (currentView === 'withdrawals' && withdrawalTab === 'map') renderWithdrawalTab();
+});
 function drawWithdrawalReport() {
   const from = $('withdrawalFrom').value;
   const to = $('withdrawalTo').value;
@@ -363,7 +380,7 @@ function drawWithdrawalReport() {
 }
 $('withdrawalSubnav').addEventListener('click', event => {
   const button = event.target.closest('[data-withdrawal-tab]');
-  if (!button || role !== 'admin') return;
+  if (!button || (button.dataset.withdrawalTab === 'report' && role !== 'admin')) return;
   withdrawalTab = button.dataset.withdrawalTab;
   renderWithdrawalTab();
 });
@@ -430,7 +447,7 @@ function renderNoAnswerVisits() {
 }
 async function refreshWithdrawals() {
   if (!sessionUser || !['admin','operator','technician','attendant'].includes(role)) return;
-  try { [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
+  try { [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); if (currentView === 'withdrawals' && withdrawalTab === 'map') renderWithdrawalTab(); }
   catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
 }
 function openWithdrawalDetails(id) {
@@ -438,6 +455,16 @@ function openWithdrawalDetails(id) {
   selectedWithdrawalId = id;
   const visit = latestVisit(id);
   $('withdrawalDetailName').textContent = item.name;
+  let route = $('withdrawalRoute');
+  if (!route) {
+    route = document.createElement('a'); route.id = 'withdrawalRoute'; route.className = 'withdrawal-route';
+    route.textContent = '↗ Definir rota até a retirada'; route.target = '_blank'; route.rel = 'noopener noreferrer';
+    $('withdrawalDetailFields').before(route);
+  }
+  const destination = validCoordinates(item) ? `${item.latitude},${item.longitude}` : item.address;
+  route.hidden = !destination;
+  if (!route.hidden) route.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
+  route.title = validCoordinates(item) ? 'Rota pela localização exata do SGP' : 'Rota pelo endereço informado; confira o destino no Google Maps';
   $('withdrawalDetailFields').innerHTML = [
     ['Origem', recordOrigin(item)],
     ['Contrato SGP', item.contract_id || 'Não informado'], ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
@@ -677,6 +704,10 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && 
 document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) { closeOverlay(overlay.id); if (overlay.id === 'resolveOverlay') renderClients(); } }));
 
 $('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('contract').focus(); });
+const coordinateControl = document.createElement('div');
+coordinateControl.className = 'control';
+coordinateControl.innerHTML = '<label for="withdrawalCoordinates">Latitude/Longitude do SGP (opcional)</label><input id="withdrawalCoordinates" placeholder="-19.755521,-41.955777" inputmode="text"><span class="hint">Copie o campo Latitude/Longitude do cadastro do cliente no SGP.</span>';
+$('withdrawalContract').closest('.control').after(coordinateControl);
 $('addWithdrawalBtn').addEventListener('click', async () => {
   if (role === 'technician') return;
   $('withdrawalForm').reset();
@@ -703,6 +734,9 @@ $('withdrawalForm').addEventListener('submit', async (event) => {
   const address = $('withdrawalAddress').value.trim();
   const city = normalizeWithdrawalCity($('withdrawalCity').value);
   const district = $('withdrawalDistrict').value.trim();
+  const coordinateText = $('withdrawalCoordinates').value.trim();
+  const coordinates = coordinateText ? parseCoordinatePair(coordinateText) : null;
+  if (coordinateText && !coordinates) { $('withdrawalError').textContent = 'Informe latitude e longitude válidas, separadas por vírgula.'; return; }
   if (!name || !address || !city || !district) {
     $('withdrawalError').textContent = 'Preencha nome, endereço, cidade e bairro.';
     return;
@@ -712,7 +746,7 @@ $('withdrawalForm').addEventListener('submit', async (event) => {
   try {
     if (!await confirmCatalogContractStatus($('withdrawalContract').value.trim())) return;
     const phone = await readClientPhone('withdrawalPhone');
-    await createWithdrawal({contract:$('withdrawalContract').value.trim(), name, phone, address, city, district, equipment:$('withdrawalEquipment').value}, sessionUser.id);
+    await createWithdrawal({contract:$('withdrawalContract').value.trim(), name, phone, address, city, district, ...coordinates, equipment:$('withdrawalEquipment').value}, sessionUser.id);
     closeOverlay('withdrawalFormOverlay');
     await refreshWithdrawals();
     showToast('Retirada cadastrada.');
@@ -919,6 +953,52 @@ function bindWithdrawalReview() {
   });
 }
 bindWithdrawalReview();
+const locationFile = document.createElement('input');
+locationFile.type = 'file';
+locationFile.accept = '.xlsx,.csv';
+locationFile.hidden = true;
+const locationButton = document.createElement('button');
+locationButton.type = 'button';
+locationButton.className = 'secondary';
+locationButton.id = 'importWithdrawalLocations';
+locationButton.textContent = 'Importar localizações';
+locationButton.hidden = true;
+$('withdrawalTools').append(locationButton, locationFile);
+locationButton.addEventListener('click', () => locationFile.click());
+locationFile.addEventListener('change', async () => {
+  const file = locationFile.files?.[0];
+  locationFile.value = '';
+  if (!file || role !== 'admin') return;
+  locationButton.disabled = true;
+  try {
+    let records;
+    if (/\.xlsx$/i.test(file.name)) {
+      const { readSheet } = await import('read-excel-file/browser');
+      const rows = await readSheet(file);
+      const header = rows.findIndex(row => row.some(cell => /^(contrato id|id contrato|contrato)$/i.test(String(cell ?? '').trim())));
+      if (header < 0) throw new Error('A planilha precisa da coluna Contrato ID.');
+      const columns = rows[header].map((cell, index) => ({ name: String(cell ?? '').trim(), index }))
+        .filter(({ name }) => /^(contrato id|id contrato|contrato|latitude|longitude|latitude\/longitude|latitude e longitude|coordenadas)$/i.test(name));
+      records = rows.slice(header + 1).map(row => Object.fromEntries(columns.map(({name, index}) => [name, row[index]])));
+    } else {
+      const bytes = await file.arrayBuffer();
+      let content;
+      try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+      catch { content = new TextDecoder('windows-1252').decode(bytes); }
+      records = parseCsv(content, { locationCatalog: true });
+    }
+    const { imported, skipped } = await importContractLocations(records);
+    await refreshWithdrawals();
+    showToast(`${imported} localizações atualizadas. ${skipped} linhas sem coordenadas válidas.`);
+  } catch (error) {
+    showToast(`Não foi possível importar localizações: ${error.message}`);
+  } finally {
+    locationButton.disabled = false;
+  }
+});
+
+
+
 
 
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });

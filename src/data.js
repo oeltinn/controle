@@ -73,7 +73,7 @@ function headerKey(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleUpperCase('pt-BR').replace(/\s+/g, ' ');
 }
 
-export function parseCsv(text, { sgpContracts = false, equipmentCatalog = false, clientCatalog = false } = {}) {
+export function parseCsv(text, { sgpContracts = false, equipmentCatalog = false, clientCatalog = false, locationCatalog = false } = {}) {
   const input = String(text).replace(/^\uFEFF/, '');
   const lines = input.split(/\r?\n/);
   const catalogHeader = cells => {
@@ -81,10 +81,16 @@ export function parseCsv(text, { sgpContracts = false, equipmentCatalog = false,
     return keys.some(key=>['CONTRATO','CONTRATO ID','ID CONTRATO'].includes(key)) &&
       keys.some(key=>['MODELO','MODELO ONU','EQUIPAMENTO'].includes(key));
   };
-  const header = cells => sgpContracts ? ['CLIENTE ID','CONTRATO ID','CLIENTE','ENDERECO','STATUS'].every(key=>cells.some(cell=>headerKey(cell)===key)) : clientCatalog ? ['CONTRATO ID','CLIENTE','ENDERECO','BAIRRO','CIDADE'].every(key=>cells.some(cell=>headerKey(cell)===key)) : catalogHeader(cells);
-  const hasPreamble = sgpContracts || equipmentCatalog || clientCatalog;
+  const locationHeader = cells => {
+    const keys = cells.map(headerKey);
+    return keys.some(key=>['CONTRATO','CONTRATO ID','ID CONTRATO'].includes(key)) &&
+      (keys.some(key=>['LATITUDE/LONGITUDE','LATITUDE E LONGITUDE','COORDENADAS'].includes(key)) ||
+       (keys.includes('LATITUDE') && keys.includes('LONGITUDE')));
+  };
+  const header = cells => sgpContracts ? ['CLIENTE ID','CONTRATO ID','CLIENTE','ENDERECO','STATUS'].every(key=>cells.some(cell=>headerKey(cell)===key)) : locationCatalog ? locationHeader(cells) : clientCatalog ? ['CONTRATO ID','CLIENTE','ENDERECO','BAIRRO','CIDADE'].every(key=>cells.some(cell=>headerKey(cell)===key)) : catalogHeader(cells);
+  const hasPreamble = sgpContracts || equipmentCatalog || clientCatalog || locationCatalog;
   const firstLine = (hasPreamble ? lines.find(line=>header(line.split(/[,;\t]/).map(cell=>cell.replaceAll('"','')))) : lines[0]) || '';
-  if (hasPreamble && !firstLine) throw new Error(equipmentCatalog ? 'O catálogo precisa das colunas Contrato e Modelo.' : clientCatalog ? 'O catálogo precisa das colunas Contrato ID, Cliente, Endereço, Bairro e Cidade.' : 'Use o CSV do relatório Contrato → Status do SGP.');
+  if (hasPreamble && !firstLine) throw new Error(locationCatalog ? "A planilha precisa de Contrato ID e Latitude/Longitude." : equipmentCatalog ? 'O catálogo precisa das colunas Contrato e Modelo.' : clientCatalog ? 'O catálogo precisa das colunas Contrato ID, Cliente, Endereço, Bairro e Cidade.' : 'Use o CSV do relatório Contrato → Status do SGP.');
   const delimiter = [',', ';', '\t'].map((candidate) => ({ candidate, count: firstLine.split(candidate).length - 1 })).sort((a, b) => b.count - a.count)[0].candidate;
   const rows = [];
   let row = [], field = '', quoted = false;
@@ -260,12 +266,45 @@ export async function importContractEquipment(records) {
   return rows.length;
 }
 
+export function parseCoordinatePair(pair, latitudeText = '', longitudeText = '') {
+  const parts = pair ? String(pair).trim().split(/[,;\s]+/).filter(Boolean) : [latitudeText, longitudeText];
+  if (parts.length !== 2 || parts.some(part => !/^[+-]?\d+(?:[.,]\d+)?$/.test(String(part ?? '').trim()))) return null;
+  const latitude = Number(String(parts[0]).replace(',','.'));
+  const longitude = Number(String(parts[1]).replace(',','.'));
+  return parts.length === 2 && Number.isFinite(latitude) && Number.isFinite(longitude) &&
+    Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 && (latitude !== 0 || longitude !== 0)
+    ? { latitude, longitude } : null;
+}
+
+export function normalizeLocationCatalog(records) {
+  const locations = new Map();
+  let skipped = 0;
+  for (const record of records) {
+    const contract = String(byHeader(record, 'Contrato ID') || byHeader(record, 'ID Contrato') || byHeader(record, 'Contrato')).match(/^(\d+)(?:\s+[-–].*)?$/)?.[1];
+    const pair = byHeader(record, 'Latitude/Longitude') || byHeader(record, 'Latitude e Longitude') || byHeader(record, 'Coordenadas');
+    const coordinates = parseCoordinatePair(pair, byHeader(record,'Latitude'),byHeader(record,'Longitude'));
+    if (!contract || !coordinates) { skipped++; continue; }
+    locations.set(contract, { contract_id: contract, ...coordinates });
+  }
+  return { rows: [...locations.values()], skipped };
+}
+
+export async function importContractLocations(records) {
+  const { rows, skipped } = normalizeLocationCatalog(records);
+  if (!rows.length) throw new Error('Nenhuma coordenada válida encontrada. O arquivo precisa de Contrato ID e Latitude/Longitude do SGP.');
+  const importedAt = new Date().toISOString();
+  for (let start = 0; start < rows.length; start += 100) {
+    unwrap(await supabase.from('sgp_contract_locations').upsert(rows.slice(start,start+100).map(row=>({...row, imported_at: importedAt})), {onConflict:'contract_id'}));
+  }
+  return { imported: rows.length, skipped };
+}
+
 export async function listWithdrawals() {
   return listAll('onu_withdrawals', 'name');
 }
 
 export async function createWithdrawal(values, userId) {
-  const row = { legacy_id: `retirada-${crypto.randomUUID()}`, contract_id: values.contract || null, name: values.name.trim(), phone: values.phone?.trim() || null, address: values.address.trim(), city: values.city.trim(), district: values.district.trim(), equipment: values.equipment.trim() || 'A identificar', created_by: userId };
+  const row = { legacy_id: `retirada-${crypto.randomUUID()}`, contract_id: values.contract || null, name: values.name.trim(), phone: values.phone?.trim() || null, address: values.address.trim(), city: values.city.trim(), district: values.district.trim(), latitude: values.latitude ?? null, longitude: values.longitude ?? null, equipment: values.equipment.trim() || 'A identificar', created_by: userId };
   return unwrap(await supabase.from('onu_withdrawals').insert(row));
 }
 
