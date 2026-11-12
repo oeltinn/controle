@@ -605,6 +605,41 @@
   [data-kontroll-iphone] #usersOverlay .user-row { border-color: var(--line); }
   [data-kontroll-iphone] #usersOverlay .form-actions { margin: 18px 16px 0; }
 
+  /* Account and inbox follow the selected iPhone appearance. */
+  [data-kontroll-iphone] body:not([data-theme="dark"]) :is(#profileOverlay, #notificationsOverlay) {
+    --paper: #fff;
+    --ink: #19332f;
+    --muted: #526c65;
+    --line: #d5e4dd;
+    --green: #006b5e;
+    --greenbg: #e5f4ee;
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) :is(#profileOverlay, #notificationsOverlay) :is(.dialog, .dialog-head) {
+    background: var(--ios-canvas);
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) :is(#profileOverlay, #notificationsOverlay) .dialog-head .x {
+    background: #fff;
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) #profileOverlay .control :is(input, select, textarea) {
+    background: #f7faf8;
+    border-color: var(--line);
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) #profileOverlay .control input[readonly] {
+    background: #eef4f0;
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) :is(#profileOverlay, #notificationsOverlay) .primary {
+    background: #006b5e;
+    color: #fff;
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) :is(#profileOverlay, #notificationsOverlay) .secondary {
+    background: #e5eee9;
+    border-color: #e5eee9;
+    color: var(--ink);
+  }
+  [data-kontroll-iphone] body:not([data-theme="dark"]) #notificationsOverlay #notificationSettings[aria-checked="true"] .switch-track {
+    background: #006b5e;
+  }
+
   @keyframes iphone-sheet-in {
     from { transform: translateY(18px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
