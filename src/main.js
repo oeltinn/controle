@@ -1,4 +1,5 @@
 import { printReport } from './print-report.js';
+import { parseLocations, locationWorkbookRows } from './withdrawal-locations.js';
 import { renderWithdrawalOverview, renderWithdrawalReport } from './withdrawal-report.js';
 import { supabase, isSupabaseConfigured, isDemoPreview, setRememberSession } from './supabase.js';
 import { previewData } from './preview-data.js';
@@ -35,6 +36,74 @@ const withdrawalLabels = {collected:'Equipamento recolhido',equipment_not_found:
 let appLoading = false;
 let currentView = 'monthly';
 let withdrawalTab = 'list';
+const mapDesktop = matchMedia('(min-width: 721px) and (hover: hover) and (pointer: fine)');
+const canUseWithdrawalMap = () => mapDesktop.matches && ['admin', 'operator', 'technician', 'attendant'].includes(role);
+let mapRequest = 0;
+
+async function getWithdrawalLocations(items) {
+  if (isDemoPreview) return items.map((item, index) => ({
+    item, point: { latitude: -19.757 + index * .006, longitude: -42.076 + index * .004 },
+  }));
+  const contracts = [...new Set(items.map(item => item.contract_id).filter(Boolean))];
+  const points = new Map();
+  for (let offset = 0; offset < contracts.length; offset += 100) {
+    const { data, error } = await supabase.from('sgp_contract_locations')
+      .select('contract_id,latitude,longitude').in('contract_id', contracts.slice(offset, offset + 100));
+    if (error) throw error;
+    for (const point of data) points.set(point.contract_id, point);
+  }
+  return items.filter(item => points.has(item.contract_id)).map(item => ({ item, point: points.get(item.contract_id) }));
+}
+
+async function renderWithdrawalMap() {
+  const request = ++mapRequest;
+  const items = withdrawals.filter(withdrawalVisible);
+  const status = $('withdrawalMapStatus');
+  status.textContent = 'Carregando mapa…';
+  try {
+    const [{ drawMap }, entries] = await Promise.all([import('./withdrawal-map.js'), getWithdrawalLocations(items)]);
+    if (request !== mapRequest || $('withdrawalMapPane').hidden || $('appShell').hidden) return;
+    $('withdrawalMap').hidden = false;
+    drawMap($('withdrawalMap'), entries, openWithdrawalDetails);
+    status.textContent = `${entries.length} no mapa · ${items.length - entries.length} sem coordenadas`;
+  } catch {
+    if (request === mapRequest) {
+      status.textContent = 'Não foi possível carregar o mapa. Confira a conexão e a configuração do catálogo de localizações.';
+      $('withdrawalMap').hidden = true;
+    }
+  }
+}
+
+mapDesktop.addEventListener('change', renderWithdrawalTab);
+$('locationImport').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (role !== 'admin' || !canUseWithdrawalMap() || isDemoPreview) return;
+  const form = event.currentTarget;
+  const input = form.querySelector('input');
+  const button = form.querySelector('button');
+  const file = input.files[0];
+  if (!file || button.disabled) return;
+  button.disabled = true;
+  try {
+    let rows;
+    if (/\.xlsx$/i.test(file.name)) {
+      const { readSheet } = await import('read-excel-file/browser');
+      rows = locationWorkbookRows(await readSheet(file));
+    } else if (/\.csv$/i.test(file.name)) {
+      rows = parseCsv(await file.text());
+    } else throw new Error('Selecione um CSV ou XLSX.');
+    const points = parseLocations(rows);
+    const { error } = await supabase.from('sgp_contract_locations').upsert(points, { onConflict: 'contract_id' });
+    if (error) throw error;
+    form.reset();
+    showToast(`${points.length} localizações importadas.`);
+    if (!$('withdrawalMapPane').hidden) void renderWithdrawalMap();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 let recoveryMode = false;
 let authRevision = 0;
 let inbox = [];
@@ -349,13 +418,22 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
 
 function renderWithdrawalTab() {
   const active = currentView === 'withdrawals';
-  if (role !== 'admin') withdrawalTab = 'list';
+  const desktop = canUseWithdrawalMap();
+  if ((withdrawalTab === 'report' && role !== 'admin') || (withdrawalTab === 'map' && !desktop)) withdrawalTab = 'list';
   const report = withdrawalTab === 'report';
-  $('withdrawalSubnav').hidden = !active || role !== 'admin';
-  $('withdrawalListPane').hidden = report;
+  const map = active && withdrawalTab === 'map';
+  $('withdrawalSubnav').hidden = !active || (!desktop && role !== 'admin');
+  $('withdrawalListPane').hidden = report || map;
+  $('withdrawalMapPane').hidden = !map;
+  $('locationImport').hidden = role !== 'admin' || isDemoPreview;
+  $('withdrawalMap').hidden = false;
+  if (map) void renderWithdrawalMap();
+  else mapRequest++;
   $('withdrawalReportPane').hidden = !report;
-  $('withdrawalTools').hidden = !active || report || role === 'technician';
+  $('withdrawalTools').hidden = !active || report || map || role === 'technician';
   for (const button of $('withdrawalSubnav').querySelectorAll('button')) {
+    if (button.dataset.withdrawalTab === 'map') button.hidden = !desktop;
+    if (button.dataset.withdrawalTab === 'report') button.hidden = role !== 'admin';
     const selected = button.dataset.withdrawalTab === withdrawalTab;
     button.classList.toggle('active', selected);
     if (selected) button.setAttribute('aria-current', 'page');
@@ -379,7 +457,7 @@ function drawWithdrawalReport() {
 }
 $('withdrawalSubnav').addEventListener('click', event => {
   const button = event.target.closest('[data-withdrawal-tab]');
-  if (!button || role !== 'admin') return;
+  if (!button || button.hidden) return;
   withdrawalTab = button.dataset.withdrawalTab;
   renderWithdrawalTab();
 });
@@ -446,7 +524,12 @@ function renderNoAnswerVisits() {
 }
 async function refreshWithdrawals() {
   if (isDemoPreview || !sessionUser || !['admin','operator','technician','attendant'].includes(role)) return;
-  try { [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]); renderWithdrawals(); renderNoAnswerVisits(); }
+  try {
+    [withdrawals, withdrawalVisits] = await Promise.all([listWithdrawals(), listWithdrawalVisits()]);
+    renderWithdrawals();
+    renderNoAnswerVisits();
+    if (!$('withdrawalMapPane').hidden) void renderWithdrawalMap();
+  }
   catch (error) { showToast(`Não foi possível carregar as retiradas: ${error.message}`); }
 }
 function openWithdrawalDetails(id) {
@@ -460,6 +543,22 @@ function openWithdrawalDetails(id) {
     ['Situação', withdrawalLabels[visit?.result || 'pending']],
     ...(visit ? [['Último registro', `${visit.technician_name} · ${displayDate(String(visit.created_at).slice(0,10))}`], ['Observação', visit.observation || '—']] : []),
   ].map(([label, value]) => `<div class="field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
+  if (canUseWithdrawalMap() && withdrawalVisible(item)) {
+    const slot = document.createElement('div');
+    slot.className = 'field full';
+    $('withdrawalDetailFields').prepend(slot);
+    void getWithdrawalLocations([item]).then(([entry]) => {
+      if (!slot.isConnected || !entry) return;
+      const { latitude, longitude } = entry.point;
+      const link = document.createElement('a');
+      const query = new URLSearchParams({ api: '1', destination: `${latitude},${longitude}`, travelmode: 'driving' });
+      link.href = `https://www.google.com/maps/dir/?${query}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Definir rota até a retirada';
+      slot.append(link);
+    }).catch(() => {});
+  }
   const actions = $('withdrawalVisitActions');
   actions.hidden = role === 'attendant' || !withdrawalVisible(item);
   for (const button of actions.querySelectorAll('[data-visit-result]')) {
