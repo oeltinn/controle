@@ -1,3 +1,4 @@
+import { locationWorkbookRows, parseLocations, isSystemReport } from './withdrawal-locations.js';
 import { renderWithdrawalMap, validCoordinates } from './withdrawal-map.js';
 import { importContractLocations, parseCoordinatePair } from './data.js';
 import { printReport } from './print-report.js';
@@ -232,8 +233,6 @@ function setView(view) {
   renderWithdrawalTab();
   document.querySelector('label[for=withdrawalCsvFile]').hidden = !['admin','operator'].includes(role);
   $('openCatalog').hidden = role !== 'admin';
-  const locationImport = $('importWithdrawalLocations');
-  if (locationImport) locationImport.hidden = role !== 'admin';
 
   $('catalogAgeNotice').hidden = view !== 'withdrawals' || role !== 'admin' || !clientCatalogState || (Date.now()-new Date(clientCatalogState.imported_at).getTime()) < 7*86400000;
   $('openImports').hidden = !canManageWithdrawals();
@@ -890,7 +889,11 @@ function bindWithdrawalReview() {
   let catalogFile=null;
   let catalogType='onu';
   const selectCatalogType=type=>{
-    catalogType=type; $('catalogTitle').textContent=`Importar catálogo de ${type==='onu'?'ONU':'clientes'}`;
+    if (confirm.dataset.busy) return;
+    catalogType=type;
+    $('catalogLocations').hidden = !matchMedia('(min-width: 721px) and (hover: hover) and (pointer: fine)').matches;
+    $('catalogLocations').classList.toggle('active',type==='locations');
+    $('catalogTitle').textContent=`Importar catálogo de ${({onu:'ONU',clients:'clientes',locations:'localizações'})[type]}`;
     $('catalogOnu').classList.toggle('active',type==='onu'); $('catalogClients').classList.toggle('active',type==='clients');
     $('catalogOnuHelp').hidden=type!=='onu'; $('catalogClientsHelp').hidden=type!=='clients';
     $('equipmentCsvFile').accept=type==='onu'?'text/csv,.csv':'.xlsx,.csv,text/csv';
@@ -907,6 +910,7 @@ function bindWithdrawalReview() {
   };
   $('catalogOnu').addEventListener('click',()=>selectCatalogType('onu'));
   $('catalogClients').addEventListener('click',()=>selectCatalogType('clients'));
+  $('catalogLocations').addEventListener('click',()=>selectCatalogType('locations'));
   $('openCatalog').addEventListener('click',()=>{
     if(role!=='admin') return;
     closeMenu();
@@ -936,6 +940,33 @@ function bindWithdrawalReview() {
         try {content=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
         catch {content=new TextDecoder('windows-1252').decode(bytes);}
       }
+      if (catalogType === 'locations') {
+        let records;
+        if (/\.xlsx$/i.test(file.name)) {
+          const { readSheet } = await import('read-excel-file/browser');
+          records = locationWorkbookRows(await readSheet(file));
+        } else {
+          records = parseCsv(content);
+          if (!records[0] || !isSystemReport(Object.keys(records[0]))) {
+            records = parseCsv(content, { locationCatalog: true });
+          }
+        }
+        let imported;
+        if (records[0] && isSystemReport(Object.keys(records[0]))) {
+          const points = parseLocations(records);
+          const { error, count } = await supabase.from('sgp_contract_locations')
+            .upsert(points, { onConflict: 'contract_id', count: 'exact' });
+          if (error) throw error;
+          imported = count ?? points.length;
+        } else {
+          ({ imported } = await importContractLocations(records));
+        }
+        closeOverlay('catalogOverlay');
+        choose(null);
+        await refreshWithdrawals();
+        showToast(`${imported} contrato(s) atualizados no catálogo de localizações.`);
+        return;
+      }
       const count=catalogType==='onu'
         ? await importContractEquipment(parseCsv(content,{equipmentCatalog:true}))
         : await replaceClientCatalog(/\.xlsx$/i.test(file.name) ? await parseSgpClientWorkbook(file) : parseCsv(content,{clientCatalog:true}),file.name);
@@ -953,54 +984,6 @@ function bindWithdrawalReview() {
   });
 }
 bindWithdrawalReview();
-const locationFile = document.createElement('input');
-locationFile.type = 'file';
-locationFile.accept = '.xlsx,.csv';
-locationFile.hidden = true;
-const locationButton = document.createElement('button');
-locationButton.type = 'button';
-locationButton.className = 'secondary';
-locationButton.id = 'importWithdrawalLocations';
-locationButton.textContent = 'Importar localizações';
-locationButton.hidden = true;
-$('withdrawalTools').append(locationButton, locationFile);
-locationButton.addEventListener('click', () => locationFile.click());
-locationFile.addEventListener('change', async () => {
-  const file = locationFile.files?.[0];
-  locationFile.value = '';
-  if (!file || role !== 'admin') return;
-  locationButton.disabled = true;
-  try {
-    let records;
-    if (/\.xlsx$/i.test(file.name)) {
-      const { readSheet } = await import('read-excel-file/browser');
-      const rows = await readSheet(file);
-      const header = rows.findIndex(row => row.some(cell => /^(contrato id|id contrato|contrato)$/i.test(String(cell ?? '').trim())));
-      if (header < 0) throw new Error('A planilha precisa da coluna Contrato ID.');
-      const columns = rows[header].map((cell, index) => ({ name: String(cell ?? '').trim(), index }))
-        .filter(({ name }) => /^(contrato id|id contrato|contrato|latitude|longitude|latitude\/longitude|latitude e longitude|coordenadas)$/i.test(name));
-      records = rows.slice(header + 1).map(row => Object.fromEntries(columns.map(({name, index}) => [name, row[index]])));
-    } else {
-      const bytes = await file.arrayBuffer();
-      let content;
-      try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
-      catch { content = new TextDecoder('windows-1252').decode(bytes); }
-      records = parseCsv(content, { locationCatalog: true });
-    }
-    const { imported, skipped } = await importContractLocations(records);
-    await refreshWithdrawals();
-    showToast(`${imported} localizações atualizadas. ${skipped} linhas sem coordenadas válidas.`);
-  } catch (error) {
-    showToast(`Não foi possível importar localizações: ${error.message}`);
-  } finally {
-    locationButton.disabled = false;
-  }
-});
-
-
-
-
-
 $('routerEnabled').addEventListener('change', () => { const enabled = $('routerEnabled').checked; $('routerSelectWrap').hidden = !enabled; $('routerModel').required = enabled; if (!enabled) $('routerModel').value = ''; });
 async function suggestClientCatalog(contract, type) {
   const error = $(type === 'client' ? 'formError' : 'withdrawalError');
