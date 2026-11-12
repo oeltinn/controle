@@ -1,7 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
-import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getMessaging } from 'firebase-admin/messaging';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim();
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
@@ -11,8 +9,11 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 const firebaseCredentials = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
 export const config = { maxDuration: 30 };
 
-function androidMessaging() {
+async function androidMessaging() {
   if (!firebaseCredentials) return null;
+  const [{ cert, getApps, initializeApp }, { getMessaging }] = await Promise.all([
+    import('firebase-admin/app'), import('firebase-admin/messaging'),
+  ]);
   const app = getApps().find(item => item.name === 'kontroll-fcm') || initializeApp({
     credential: cert(JSON.parse(firebaseCredentials)),
   }, 'kontroll-fcm');
@@ -82,7 +83,7 @@ export default async function handler(req, res) {
   let androidDelivered = 0;
   let androidError = null;
   try {
-    const messaging = androidMessaging();
+    const messaging = await androidMessaging();
     if (messaging) {
       const { data: tokens, error: tokenError } = await admin.from('android_push_tokens')
         .select('token,user_id').in('user_id', ids);

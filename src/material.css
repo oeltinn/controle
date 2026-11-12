@@ -51,7 +51,8 @@ body[data-theme="dark"] .subnav .view-tab.active{color:#c0f7e9}
 body[data-theme="dark"] .admin-menu button:hover{background:var(--md-surface-high)}
 .dialog{border-radius:28px;box-shadow:0 24px 60px #001e192b}
 .overlay{background:#071f1aaa}
-.x{border-radius:999px;background:var(--md-surface-container);color:var(--ink)}
+.x{display:grid;place-items:center;padding:0;line-height:0;border-radius:999px;background:var(--md-surface-container);color:var(--ink)}
+.x svg{display:block;pointer-events:none}
 .x:hover{background:var(--md-surface-high)}
 .control :is(input,textarea,select),.search,.status-select,.recovery-filters :is(input,select){
   border:1px solid var(--md-outline);border-radius:12px;background:var(--paper);color:var(--ink);

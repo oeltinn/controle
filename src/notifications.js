@@ -92,7 +92,9 @@ export async function sendNotification(input) {
     }
     response = await request(refreshed.session.access_token);
   }
-  const data = await response.json();
+  let data;
+  try { data = await response.json(); }
+  catch { throw new Error('O servidor de notificações não respondeu corretamente. Tente novamente em instantes.'); }
   if (!response.ok) throw new Error(data.error || 'Não foi possível enviar a notificação.');
   return data;
 }
