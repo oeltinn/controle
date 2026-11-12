@@ -94,7 +94,10 @@ function addGlassControl() {
     document.body.style.setProperty('--ios-sheet', `rgba(${dark ? '36, 36, 38' : '247, 255, 251'}, ${(.94 - liquid * .35).toFixed(2)})`);
     document.documentElement.style.setProperty('--ios-liquid-level', slider.value);
   };
-  slider.addEventListener('input', apply);
+  slider.addEventListener('input', () => {
+    apply();
+    document.dispatchEvent(new Event('kontroll-glass-change'));
+  });
   slider.addEventListener('change', () => {
     try { localStorage.setItem('kontroll.iphoneGlass', slider.value); } catch { /* Private browsing */ }
     document.dispatchEvent(new Event('kontroll-glass-change'));

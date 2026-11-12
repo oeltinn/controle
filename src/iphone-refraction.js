@@ -15,33 +15,53 @@ export function startRefraction() {
   let lens;
   let timer;
   let watchdog;
+  let renderFrame;
   let generation = 0;
-  let unavailable = false;
   let failures = 0;
 
   const stop = () => {
     generation++;
     clearTimeout(watchdog);
+    cancelAnimationFrame(renderFrame);
+    renderFrame = null;
     nav.removeAttribute('data-refraction-ready');
     lens?.destroy();
     lens = null;
   };
-  const eligible = () => !unavailable && !document.hidden &&
+  const eligible = () => !document.hidden &&
     !preferences.some(query => query.matches) &&
     !document.documentElement.hasAttribute('data-iphone-keyboard') &&
     nav.getBoundingClientRect().width > 0 && !shell.hidden;
 
+  const liquidLevel = () => {
+    const value = Number(document.documentElement.style.getPropertyValue('--ios-liquid-level'));
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) / 100 : .55;
+  };
   const tint = () => {
-    const liquid = Number(document.documentElement.style.getPropertyValue('--ios-liquid-level') || 55) / 100;
+    const liquid = liquidLevel();
     return document.body.dataset.theme === 'dark'
       ? `rgba(22,22,24,${(.72 - liquid * .48).toFixed(2)})`
       : `rgba(245,255,250,${(.55 - liquid * .48).toFixed(2)})`;
+  };
+  const updateLevel = () => {
+    if (!lens?.renderer || !nav.hasAttribute('data-refraction-ready')) return;
+    const current = lens;
+    const liquid = liquidLevel();
+    current.options.refraction = .004 + liquid * .026;
+    current.options.frost = 7 - liquid * 6.6;
+    current.options.interactionStrength = .04 + liquid * .24;
+    current.setTint(tint());
+    if (renderFrame) return;
+    renderFrame = requestAnimationFrame(() => {
+      renderFrame = null;
+      if (lens === current && current.renderer) current.renderer.render();
+    });
   };
   const rebuild = () => {
     stop();
     if (!eligible()) return;
     const current = generation;
-    const liquid = Number(document.documentElement.style.getPropertyValue('--ios-liquid-level') || 55) / 100;
+    const liquid = liquidLevel();
     try {
       lens = liquidGL({
         target: '.iphone-refraction-pane', snapshot: 'body', content: false,
@@ -58,12 +78,17 @@ export function startRefraction() {
           failures = 0;
           for (const canvas of nav.querySelectorAll('canvas')) {
             canvas.setAttribute('aria-hidden', 'true');
-            canvas.addEventListener('webglcontextlost', () => {
-              unavailable = true;
+            canvas.addEventListener('webglcontextlost', (event) => {
+              // destroy() deliberately loses its old WebGL context. Ignore it.
+              if (current !== generation) return;
+              event.preventDefault();
               stop();
+              failures += 1;
+              if (failures < 3) timer = setTimeout(rebuild, 1200 * failures);
             }, { once: true });
           }
           nav.setAttribute('data-refraction-ready', '');
+          queueMicrotask(updateLevel);
         } },
       });
       // A failed asynchronous snapshot must leave the CSS surface usable.
@@ -81,10 +106,9 @@ export function startRefraction() {
       console.warn('Refração desativada neste dispositivo:', error);
     }
   };
-  const schedule = (force = false) => {
+  const schedule = () => {
     clearTimeout(timer);
     if (!eligible()) { if (lens) stop(); return; }
-    if (force) { timer = setTimeout(rebuild, 180); return; }
     if (!lens) timer = setTimeout(rebuild, 180);
   };
   // liquidGL already tracks changes to its body snapshot. Rebuilding on each
@@ -101,11 +125,10 @@ export function startRefraction() {
   if ('ResizeObserver' in window) new ResizeObserver(() => schedule()).observe(nav);
   for (const query of preferences) query.addEventListener('change', () => schedule());
   document.addEventListener('visibilitychange', () => schedule());
-  document.addEventListener('kontroll-glass-change', () => schedule(true));
-  new MutationObserver(() => {
-    if (lens?.setTint) lens.setTint(tint());
-    else schedule(true);
-  }).observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
+  document.addEventListener('kontroll-glass-change', updateLevel);
+  new MutationObserver(updateLevel).observe(document.body, {
+    attributes: true, attributeFilter: ['data-theme'],
+  });
   window.addEventListener('pagehide', () => { clearTimeout(timer); stop(); });
   window.addEventListener('pageshow', () => schedule());
   window.addEventListener('beforeprint', () => { clearTimeout(timer); stop(); });
