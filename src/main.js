@@ -458,12 +458,17 @@ function openWithdrawalDetails(id) {
   if (!route) {
     route = document.createElement('a'); route.id = 'withdrawalRoute'; route.className = 'withdrawal-route';
     route.textContent = '↗ Definir rota até a retirada'; route.target = '_blank'; route.rel = 'noopener noreferrer';
+    route.addEventListener('click', () => {
+      if (role !== 'technician' || !selectedWithdrawalId) return;
+      void sendNotification({ action: 'withdrawal-route', withdrawalId: selectedWithdrawalId })
+        .catch(() => showToast('A rota foi aberta, mas não foi possível confirmar o envio do aviso.'));
+    });
     $('withdrawalDetailFields').before(route);
   }
   const destination = validCoordinates(item) ? `${item.latitude},${item.longitude}` : item.address;
   route.hidden = !destination;
   if (!route.hidden) route.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`;
-  route.title = validCoordinates(item) ? 'Rota pela localização exata do SGP' : 'Rota pelo endereço informado; confira o destino no Google Maps';
+  route.title = validCoordinates(item) ? 'Rota pelas coordenadas cadastradas' : 'Rota pelo endereço informado; confira o destino no Google Maps';
   $('withdrawalDetailFields').innerHTML = [
     ['Origem', recordOrigin(item)],
     ['Contrato SGP', item.contract_id || 'Não informado'], ['Telefone', item.phone || 'Não informado'], ['Endereço', item.address], ['Equipamento para recolher', item.equipment],
@@ -704,9 +709,9 @@ document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListe
 
 $('addBtn').addEventListener('click', () => { $('clientForm').reset(); void initializeClientPhone().catch(() => { $('phoneHint').textContent = 'Não foi possível carregar os países. O telefone pode ficar em branco.'; }); $('formError').textContent = ''; $('routerSelectWrap').hidden = true; $('routerModel').required = false; $('formOverlay').classList.add('open'); $('contract').focus(); });
 const coordinateControl = document.createElement('div');
-coordinateControl.className = 'control';
-coordinateControl.innerHTML = '<label for="withdrawalCoordinates">Latitude/Longitude do SGP (opcional)</label><input id="withdrawalCoordinates" placeholder="-19.755521,-41.955777" inputmode="text"><span class="hint">Copie o campo Latitude/Longitude do cadastro do cliente no SGP.</span>';
-$('withdrawalContract').closest('.control').after(coordinateControl);
+coordinateControl.className = 'control full';
+coordinateControl.innerHTML = '<label for="withdrawalCoordinates">Localização (opcional)</label><input id="withdrawalCoordinates" placeholder="-19.755521, -41.955777" maxlength="80"><span class="hint">Informe latitude e longitude em graus decimais, separadas por vírgula.</span>';
+$('withdrawalLocality').after(coordinateControl);
 $('addWithdrawalBtn').addEventListener('click', async () => {
   if (role === 'technician') return;
   $('withdrawalForm').reset();
@@ -896,6 +901,7 @@ function bindWithdrawalReview() {
     $('catalogTitle').textContent=`Importar catálogo de ${({onu:'ONU',clients:'clientes',locations:'localizações'})[type]}`;
     $('catalogOnu').classList.toggle('active',type==='onu'); $('catalogClients').classList.toggle('active',type==='clients');
     $('catalogOnuHelp').hidden=type!=='onu'; $('catalogClientsHelp').hidden=type!=='clients';
+    $('catalogLocationsHelp').hidden = type !== 'locations';
     $('equipmentCsvFile').accept=type==='onu'?'text/csv,.csv':'.xlsx,.csv,text/csv';
     $('catalogDropPrompt').textContent=type==='onu'?'Arraste o CSV do catálogo para cá':'Arraste o XLSX do SGP ou um CSV para cá';
     $('equipmentCsvFile').value=''; choose(null);

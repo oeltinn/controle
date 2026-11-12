@@ -44,19 +44,29 @@ export default async function handler(req, res) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', auth.user.id).single();
-  if (profileError || profile?.role !== 'admin') return res.status(403).json({ error: 'Somente administradores podem enviar notificações.' });
-  const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
-  const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+  const routeEvent = req.body?.action === 'withdrawal-route';
+  const allowedRole = routeEvent ? 'technician' : 'admin';
+  if (profileError || profile?.role !== allowedRole) return res.status(403).json({ error: 'Envio não autorizado.' });
+  let title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+  let body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
   const targetRole = typeof req.body?.targetRole === 'string' ? req.body.targetRole : null;
   const targetUser = typeof req.body?.targetUser === 'string' ? req.body.targetUser : null;
-  if (!title || title.length > 100 || !body || body.length > 500) {
+  if (!routeEvent && (!title || title.length > 100 || !body || body.length > 500)) {
     return res.status(400).json({ error: 'Preencha título e mensagem dentro do limite indicado.' });
   }
-  const { data: notificationId, error: createError } = await supabase.rpc('create_app_notification', {
+  const { data: notificationId, error: createError } = routeEvent
+    ? await supabase.rpc('notify_withdrawal_route', { p_withdrawal_id: req.body.withdrawalId })
+    : await supabase.rpc('create_app_notification', {
     p_title: title, p_body: body, p_target_role: targetRole, p_target_user: targetUser,
   });
   if (createError) return res.status(400).json({ error: createError.message });
+  if (!notificationId) return res.status(200).json({ delivered: 0 });
   const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  if (routeEvent) {
+    const { data: message, error } = await admin.from('app_notifications').select('title,body').eq('id', notificationId).single();
+    if (error) return res.status(500).json({ error: 'Aviso salvo, mas não foi possível enviá-lo aos dispositivos.' });
+    ({ title, body } = message);
+  }
   const { data: recipients, error: recipientsError } = await admin.from('app_notification_recipients')
     .select('user_id').eq('notification_id', notificationId);
   if (recipientsError) return res.status(500).json({ error: 'Mensagem salva, mas não foi possível consultar os destinatários.' });
